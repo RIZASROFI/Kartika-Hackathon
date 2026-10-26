@@ -1,0 +1,7 @@
+Django>=5.2,<5.3
+djangorestframework>=3.16,<3.17
+django-cors-headers>=4.7,<5
+httpx==0.28.1
+beautifulsoup4==4.12.3
+trafilatura==2.0.0
+python-dotenv==1.0.1
