@@ -28,6 +28,7 @@ from intel.models import (
     Evidence,
 )
 from intel.services.extraction import ExtractedArticle, ExtractionError, extract_article
+from intel.services.factcheck import FactCheckResult, apply_limitation, run_factcheck
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,7 @@ def _persist_result(
     processing_ms: int,
     article_links: list[dict[str, str]] | None = None,
     created_at: datetime | None = None,
+    factcheck: FactCheckResult | None = None,
 ) -> Analysis:
     analysis = Analysis.objects.create(
         content=db_content,
@@ -139,6 +141,7 @@ def _persist_result(
         confidence=outcome.confidence,
         summary=outcome.summary,
         limitations=outcome.limitations,
+        factcheck=factcheck.to_json() if factcheck else {},
         processing_ms=processing_ms,
         created_at=_as_aware(created_at) or timezone.now(),
     )
@@ -185,6 +188,15 @@ def _persist_result(
             title=link.get("title") or link.get("url", ""),
             url=link.get("url"),
             kind="tautan",
+        )
+    for hit in (factcheck.hits if factcheck else [])[:5]:
+        Evidence.objects.create(
+            analysis=analysis,
+            title=hit.title or hit.claim,
+            url=hit.url or None,
+            publisher=hit.publisher,
+            kind="factcheck",
+            snippet=f"{hit.rating} · {hit.claim}",
         )
 
     existing_pairs = set(
@@ -303,7 +315,12 @@ def _refresh_coordination_scoring(analysis_id) -> None:
     analysis.verdict = assessment.verdict
     analysis.confidence = assessment.confidence
     analysis.summary = assessment.summary
-    analysis.limitations = assessment.limitations
+    factcheck_status = (analysis.factcheck or {}).get("status")
+    analysis.limitations = (
+        apply_limitation(assessment.limitations, factcheck_status)
+        if factcheck_status
+        else assessment.limitations
+    )
     analysis.save(
         update_fields=[
             "risk_score",
@@ -323,6 +340,7 @@ def _analyze_content(
     article_links: list[dict[str, str]] | None = None,
     started_at: float | None = None,
     created_at: datetime | None = None,
+    use_factcheck: bool = True,
 ) -> Analysis:
     pipeline_started = time.perf_counter()
     candidates, corpus_size = _load_candidates(
@@ -337,6 +355,19 @@ def _analyze_content(
         min_corpus=settings.COORDINATION_MIN_CORPUS,
     )
     outcome.corpus_size = corpus_size
+
+    # Pemeriksaan fakta eksternal dilakukan di luar transaksi: panggilan jaringan
+    # tidak boleh menahan lock database, dan kegagalannya tidak membatalkan analisis.
+    factcheck: FactCheckResult | None = None
+    if use_factcheck:
+        factcheck = run_factcheck(
+            text=content.raw_text,
+            title=content.title,
+            claims=[claim.text for claim in outcome.claims],
+        )
+        if factcheck.status in {"matched", "no_match", "unavailable"}:
+            outcome.limitations = apply_limitation(outcome.limitations, factcheck.status)
+
     processing_ms = int(
         (time.perf_counter() - (started_at or pipeline_started)) * 1000
     )
@@ -348,6 +379,7 @@ def _analyze_content(
             processing_ms=processing_ms,
             article_links=article_links,
             created_at=created_at,
+            factcheck=factcheck,
         )
 
     logger.info(
@@ -440,4 +472,5 @@ def analyze_text_local(
         content,
         reference_time=reference_time,
         created_at=published_at,
+        use_factcheck=False,
     )

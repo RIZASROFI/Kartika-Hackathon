@@ -12,6 +12,9 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 - **Ingest** URL artikel (Trafilatura + BeautifulSoup) atau teks manual.
 - **Hoax & fact-checking signal** — atribusi sumber, sensasionalisme, tekanan menyebarkan,
   klaim numerik tanpa sumber, ekstraksi kandidat klaim.
+- **Pemeriksaan fakta eksternal** — Google Fact Check Tools API dicari untuk judul dan klaim
+  utama, hasilnya disaring relevansinya, di-cache 7 hari, dan ditampilkan sebagai panel bukti
+  pendukung (verdict heuristik tidak diubah).
 - **Provocation analysis** — leksikon kekerasan, dehumanisasi, mobilisasi, polarisasi, pola
   ajakan eskalasi, normalisasi panjang dokumen.
 - **Coordinated activity analysis** — Jaccard similarity shingle 4-kata dalam jendela ±72 jam,
@@ -154,6 +157,14 @@ python manage.py test                 # 23 tes
 | `COORDINATION_SIMILARITY_THRESHOLD` | `0.28` | Ambang Jaccard pasangan narasi |
 | `COORDINATION_WINDOW_HOURS` | `72` | Jendela waktu perbandingan |
 | `COORDINATION_MIN_CORPUS` | `3` | Minimum korpus agar keyakinan koordinasi penuh |
+| `FACTCHECK_ENABLED` | `true` | Nonaktif otomatis bila API key kosong atau saat `manage.py test` |
+| `GOOGLE_FACTCHECK_API_KEY` | — | API key Google Fact Check Tools (aktifkan API-nya di Google Cloud Console) |
+| `FACTCHECK_TIMEOUT_SECONDS` | `6` | Timeout panggilan pemeriksaan fakta |
+| `FACTCHECK_MAX_QUERIES` | `2` | Jumlah kueri (judul + klaim) per analisis |
+| `FACTCHECK_PAGE_SIZE` | `5` | Kandidat klaim yang diminta dari Google |
+| `FACTCHECK_CACHE_TTL_HOURS` | `168` | Umur cache respons di tabel `factcheck_queries` |
+| `FACTCHECK_MIN_OVERLAP` | `0.45` | Ambang porsi kata klaim yang harus muncul di konten |
+| `FACTCHECK_LANGUAGE_CODE` | kosong | Batasi bahasa ulasan (`id`); kosong = semua bahasa |
 | `LLM_ENABLED`, `LLM_API_KEY`, `LLM_MODEL` | `false` | Placeholder integrasi LLM (belum aktif) |
 
 ### Pindah ke PostgreSQL
@@ -202,14 +213,23 @@ Skor risiko = **65% sinyal terkuat + 35% rata-rata berbobot**. Tingkat risiko: r
 sedang 25–49, tinggi 50–74, kritis 75–100.
 
 Status analisis dipilih berurutan: indikasi terkoordinasi (≥2 konten mirip dan skor koordinasi
-≥60) → terindikasi menyesatkan (hoax ≥60) → provokatif (provokasi ≥60) → perlu verifikasi →
-risiko rendah.
+≥60) → terindikasi hoax (hoax ≥60) → provokatif (provokasi ≥60) → perlu verifikasi →
+terindikasi fakta.
+
+- Jika `GOOGLE_FACTCHECK_API_KEY` diisi, judul artikel dan maksimal dua klaim hasil ekstraksi
+  dikirim ke Google Fact Check Tools API. Hasil dengan tumpang tindih kata rendah dibuang.
+  Temuan disimpan di `Analysis.factcheck` dan sebagai `Evidence` berjenis `factcheck`.
+- Sesuai prinsip retrieval, hasil pemeriksaan fakta **tidak mengubah verdict**. Ia hanya
+  memberi konteks, digabung ke daftar batasan, dan dapat diaudit analis.
+- Kegagalan API (kuota, jaringan, key salah) tidak menggagalkan analisis: status menjadi
+  `unavailable` dan catatan batasan diganti sesuai kondisi.
 
 Detail metode dan batasan tersedia di halaman **Metodologi** pada aplikasi.
 
 ## Batasan penting
 
-- Tidak ada pencocokan otomatis ke basis data fakta eksternal; status klaim tidak final.
+- Pemeriksaan fakta eksternal hanya mencakup klaim yang sudah diperiksa pihak lain; konten baru
+  tidak akan punya catatan, dan ketiadaan catatan bukan bukti kebenaran.
 - Sinyal bot/AI hanya berbasis teks karena metadata akun belum tersedia.
 - Leksikon dapat melewatkan sarkasme, kutipan berita, atau konteks budaya.
 - Kemiripan teks bukan bukti aktor yang sama (bisa karena sindikasi berita).
@@ -227,6 +247,6 @@ Migrasi dan seed akan berjalan otomatis.
    tersedia di model).
 2. Proteksi API dengan token/session auth dan peran analis/supervisor.
 3. Impor batch CSV/JSON untuk metadata akun dan waktu unggah.
-4. Retrieval bukti dari basis data fakta dan kanal resmi.
+4. Integrasi MAFINDO/Yudistira API sebagai sumber pemeriksaan fakta lokal, di samping Google.
 5. Ekspor laporan investigasi (PDF/DOCX) dan notifikasi klaster baru.
 6. Deployment produksi: `DEBUG=false`, `collectstatic`, WhiteNoise/Gunicorn, PostgreSQL.

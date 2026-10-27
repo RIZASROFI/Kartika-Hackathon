@@ -27,9 +27,9 @@ export const VERDICT_META: Record<Verdict, VerdictMeta> = {
     hex: "#e879f9",
   },
   terindikasi_menyesatkan: {
-    label: "Terindikasi menyesatkan",
-    short: "Menyesatkan",
-    description: "Kelemahan atribusi dan pola amplifikasi mengarah pada informasi menyesatkan.",
+    label: "Terindikasi Hoax",
+    short: "Terindikasi Hoax",
+    description: "Kelemahan atribusi dan pola amplifikasi mengarah pada indikasi hoax.",
     badge: "border-rose-400/30 bg-rose-400/10 text-rose-300",
     dot: "bg-rose-400",
     hex: "#fb7185",
@@ -51,9 +51,9 @@ export const VERDICT_META: Record<Verdict, VerdictMeta> = {
     hex: "#fbbf24",
   },
   risiko_rendah: {
-    label: "Risiko rendah",
-    short: "Risiko rendah",
-    description: "Tidak ditemukan indikasi kuat pada sinyal yang tersedia.",
+    label: "Terindikasi Fakta",
+    short: "Terindikasi Fakta",
+    description: "Tidak ditemukan indikasi hoax yang kuat; konten terindikasi mengarah pada fakta.",
     badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
     dot: "bg-emerald-400",
     hex: "#34d399",
@@ -120,15 +120,15 @@ export const CATEGORY_META: Record<SignalCategory, CategoryMeta> = {
 export const VERDICT_FILTERS: Array<{ value: Verdict | null; label: string }> = [
   { value: null, label: "Semua" },
   { value: "terkoordinasi", label: "Terkoordinasi" },
-  { value: "terindikasi_menyesatkan", label: "Menyesatkan" },
+  { value: "terindikasi_menyesatkan", label: "Terindikasi Hoax" },
   { value: "provokatif", label: "Provokatif" },
   { value: "perlu_verifikasi", label: "Perlu verifikasi" },
-  { value: "risiko_rendah", label: "Risiko rendah" },
+  { value: "risiko_rendah", label: "Terindikasi Fakta" },
 ];
 
 export const CLAIM_VERDICT_META: Record<string, { label: string; badge: string }> = {
   terindikasi_menyesatkan: {
-    label: "Terindikasi menyesatkan",
+    label: "Terindikasi Hoax",
     badge: "border-rose-400/30 bg-rose-400/10 text-rose-300",
   },
   perlu_verifikasi: {

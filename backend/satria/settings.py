@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -170,6 +171,22 @@ MAX_CONTENT_CHARS = env_int("MAX_CONTENT_CHARS", 60_000)
 COORDINATION_SIMILARITY_THRESHOLD = env_float("COORDINATION_SIMILARITY_THRESHOLD", 0.28)
 COORDINATION_WINDOW_HOURS = env_int("COORDINATION_WINDOW_HOURS", 72)
 COORDINATION_MIN_CORPUS = env_int("COORDINATION_MIN_CORPUS", 3)
+
+# --- Pemeriksaan fakta eksternal (Google Fact Check Tools API) ---
+# Nonaktif otomatis saat pengujian agar suite tidak memanggil jaringan.
+RUNNING_TESTS = "test" in sys.argv or "pytest" in sys.modules
+GOOGLE_FACTCHECK_API_KEY = os.getenv("GOOGLE_FACTCHECK_API_KEY", "").strip()
+FACTCHECK_ENABLED = (
+    env_bool("FACTCHECK_ENABLED", True)
+    and bool(GOOGLE_FACTCHECK_API_KEY)
+    and not RUNNING_TESTS
+)
+FACTCHECK_TIMEOUT_SECONDS = env_float("FACTCHECK_TIMEOUT_SECONDS", 6.0)
+FACTCHECK_MAX_QUERIES = env_int("FACTCHECK_MAX_QUERIES", 2)
+FACTCHECK_PAGE_SIZE = env_int("FACTCHECK_PAGE_SIZE", 5)
+FACTCHECK_CACHE_TTL_HOURS = env_int("FACTCHECK_CACHE_TTL_HOURS", 168)
+FACTCHECK_MIN_OVERLAP = env_float("FACTCHECK_MIN_OVERLAP", 0.45)
+FACTCHECK_LANGUAGE_CODE = os.getenv("FACTCHECK_LANGUAGE_CODE", "").strip()
 
 LLM_ENABLED = env_bool("LLM_ENABLED", False)
 LLM_API_KEY = os.getenv("LLM_API_KEY") or None

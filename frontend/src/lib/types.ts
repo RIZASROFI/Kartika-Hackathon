@@ -37,6 +37,29 @@ export interface Evidence {
   retrieved_at: string;
 }
 
+export type FactCheckVerdict = "hoax" | "sebagian_benar" | "fakta" | "tidak_jelas";
+
+export interface FactCheckHit {
+  claim: string;
+  rating: string;
+  status: FactCheckVerdict;
+  publisher: string;
+  url: string;
+  title: string;
+  review_date: string | null;
+  query: string;
+}
+
+export interface FactCheckSummary {
+  provider: string;
+  status: "matched" | "no_match" | "unavailable" | "disabled";
+  queries: string[];
+  checked_at: string;
+  message: string | null;
+  hit_count: number;
+  hits: FactCheckHit[];
+}
+
 export interface RelatedAnalysis {
   id: string;
   title: string;
@@ -76,6 +99,7 @@ export interface AnalysisDetail extends AnalysisListItem {
   model_used: string | null;
   processing_ms: number;
   limitations: string[];
+  factcheck: Partial<FactCheckSummary>;
   content: ContentMeta;
   signals: Signal[];
   claims: Claim[];

@@ -94,7 +94,7 @@ def analyze_hoax(text: str, title: str | None = None) -> tuple[SignalResult, lis
         explanation = (
             "Konten menunjukkan beberapa kelemahan informasi sekaligus: atribusi tidak jelas, "
             "tekanan menyebarkan, dan/atau klaim numerik tanpa sumber. Status: terindikasi "
-            "menyesatkan secara indikatif, bukan putusan fakta."
+            "hoax secara indikatif, bukan putusan fakta."
         )
     elif score >= 35:
         explanation = (

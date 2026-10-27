@@ -9,6 +9,7 @@ from intel.models import (
     ContentItem,
     CoordinationLink,
     Evidence,
+    FactCheckQuery,
 )
 
 admin.site.site_header = "KARTIKA Intel — Threat Intelligence"
@@ -91,6 +92,7 @@ class AnalysisAdmin(admin.ModelAdmin):
         "confidence",
         "summary",
         "limitations",
+        "factcheck",
         "processing_ms",
         "created_at",
     )
@@ -124,6 +126,26 @@ class CoordinationLinkAdmin(admin.ModelAdmin):
         "hours_apart",
         "shared_phrases",
         "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(FactCheckQuery)
+class FactCheckQueryAdmin(admin.ModelAdmin):
+    list_display = ("query_text", "provider", "hit_count", "created_at", "expires_at")
+    list_filter = ("provider", "created_at")
+    search_fields = ("query_text",)
+    readonly_fields = (
+        "id",
+        "provider",
+        "query_hash",
+        "query_text",
+        "payload",
+        "hit_count",
+        "created_at",
+        "expires_at",
     )
 
     def has_add_permission(self, request):

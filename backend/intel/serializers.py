@@ -104,6 +104,7 @@ class AnalysisDetailSerializer(AnalysisListItemSerializer):
             "model_used",
             "processing_ms",
             "limitations",
+            "factcheck",
             "content",
             "signals",
             "claims",

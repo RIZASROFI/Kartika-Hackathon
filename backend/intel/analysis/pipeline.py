@@ -24,12 +24,31 @@ SIGNAL_WEIGHTS = {
     "bot_ai": 0.15,
 }
 
+FACTCHECK_LIMITATION = {
+    "off": (
+        "Tidak ada pencocokan otomatis ke basis data fakta eksternal; status klaim "
+        "bersifat indikatif."
+    ),
+    "matched": (
+        "Klaim ini pernah diperiksa lembaga pemeriksa fakta eksternal; temuan tersebut "
+        "ditampilkan sebagai bukti pendukung, bukan pengganti penilaian analis."
+    ),
+    "no_match": (
+        "Tidak ditemukan catatan pemeriksaan fakta eksternal untuk klaim ini; ketiadaan "
+        "catatan bukan bukti kebenaran."
+    ),
+    "unavailable": (
+        "Layanan pemeriksaan fakta eksternal tidak dapat dihubungi saat analisis dibuat; "
+        "status klaim sepenuhnya bergantung pada sinyal internal."
+    ),
+}
+
 VERDICT_LABELS = {
     "terkoordinasi": "Indikasi aktivitas terkoordinasi",
-    "terindikasi_menyesatkan": "Terindikasi menyesatkan",
+    "terindikasi_menyesatkan": "Terindikasi Hoax",
     "provokatif": "Provokatif",
     "perlu_verifikasi": "Perlu verifikasi",
-    "risiko_rendah": "Risiko rendah",
+    "risiko_rendah": "Terindikasi Fakta",
 }
 
 
@@ -147,7 +166,7 @@ def _build_summary(
 
 def _build_limitations(corpus_size: int, min_corpus: int) -> list[str]:
     limitations = [
-        "Tidak ada pencocokan otomatis ke basis data fakta eksternal; status klaim bersifat indikatif.",
+        FACTCHECK_LIMITATION["off"],
         "Sinyal bot/AI hanya memakai pola teks karena metadata aktivitas akun tidak tersedia.",
         "Analisis provokasi bergantung pada leksikon dan dapat melewatkan sarkasme atau konteks budaya.",
         "Semua hasil wajib ditinjau analis manusia sebelum dijadikan dasar tindakan.",

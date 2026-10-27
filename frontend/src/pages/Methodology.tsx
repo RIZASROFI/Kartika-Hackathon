@@ -56,7 +56,7 @@ const DIMENSIONS: Array<{ key: SignalCategory; weight: string }> = [
 ];
 
 const LIMITATIONS = [
-  "Tidak ada pencocokan otomatis ke basis data fakta eksternal. Status klaim selalu indikatif.",
+  "Pemeriksaan fakta eksternal bergantung pada cakupan Google Fact Check Tools; ketiadaan catatan bukan bukti kebenaran.",
   "Sinyal bot/AI hanya membaca pola teks; metadata akun, waktu unggah, dan jaringan interaksi belum tersedia.",
   "Leksikon provokasi dapat melewatkan sarkasme, ironi, kutipan berita, atau konteks budaya lokal.",
   "Kemiripan teks yang tinggi tidak membuktikan aktor yang sama; bisa terjadi karena sindikasi berita.",
@@ -271,8 +271,8 @@ export default function Methodology() {
             <h2 className="text-sm font-semibold text-white">Roadmap integrasi LLM</h2>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">
-            Mesin MVP berjalan sepenuhnya lokal. Lapisan bahasa akan ditambahkan tanpa mengubah
-            kontrak API:
+            Penilaian sinyal berjalan lokal; hanya pencarian pemeriksaan fakta yang memanggil API
+            eksternal. Lapisan bahasa akan ditambahkan tanpa mengubah kontrak API:
           </p>
           <ol className="mt-4 space-y-2.5 text-xs leading-relaxed text-slate-400">
             <li className="flex gap-2">
@@ -281,7 +281,8 @@ export default function Methodology() {
             </li>
             <li className="flex gap-2">
               <span className="font-mono text-[10px] text-slate-600">02</span>
-              Retrieval bukti dari basis data fakta dan situs resmi.
+              Pencocokan semantik dan sumber primer (mis. API MAFINDO) untuk memperluas cakupan
+              pemeriksaan fakta.
             </li>
             <li className="flex gap-2">
               <span className="font-mono text-[10px] text-slate-600">03</span>

@@ -9,6 +9,7 @@ import {
   Link2,
   Network,
   ShieldAlert,
+  ShieldCheck,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
@@ -26,14 +27,101 @@ import {
 } from "../components/ui";
 import { api } from "../lib/api";
 import { CATEGORY_META, CLAIM_VERDICT_META, verdictMeta } from "../lib/labels";
-import type { Evidence } from "../lib/types";
+import type { Evidence, FactCheckSummary, FactCheckVerdict } from "../lib/types";
 import { cn, formatDate, formatPercent, hoursLabel } from "../lib/utils";
 
 const EVIDENCE_KIND_LABEL: Record<string, string> = {
   sumber_utama: "Sumber utama",
   input_pengguna: "Input pengguna",
   tautan: "Tautan referensi",
+  factcheck: "Pemeriksaan fakta",
 };
+
+const FACTCHECK_META: Record<FactCheckVerdict, { label: string; badge: string }> = {
+  hoax: {
+    label: "Hoax / tidak benar",
+    badge: "border-rose-400/30 bg-rose-400/10 text-rose-300",
+  },
+  sebagian_benar: {
+    label: "Sebagian benar",
+    badge: "border-amber-400/30 bg-amber-400/10 text-amber-300",
+  },
+  fakta: {
+    label: "Benar / fakta",
+    badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  },
+  tidak_jelas: {
+    label: "Perlu ditelaah",
+    badge: "border-slate-400/20 bg-slate-400/10 text-slate-300",
+  },
+};
+
+function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | undefined }) {
+  const status = factcheck?.status;
+  if (!status || status === "disabled") {
+    return null;
+  }
+
+  const hits = factcheck?.hits ?? [];
+
+  return (
+    <Card>
+      <SectionHeading
+        title="Verifikasi fakta eksternal"
+        subtitle="Google Fact Check Tools · klaim yang sudah diperiksa pihak lain"
+      />
+      {status === "matched" ? (
+        <ul className="space-y-2.5">
+          {hits.map((hit) => {
+            const meta = FACTCHECK_META[hit.status] ?? FACTCHECK_META.tidak_jelas;
+            return (
+              <li
+                key={`${hit.url}-${hit.rating}`}
+                className="rounded-xl border border-white/5 bg-white/[0.015] p-3.5"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={cn("chip", meta.badge)}>{meta.label}</span>
+                  <span className="text-[11px] text-slate-500">{hit.rating}</span>
+                </div>
+                <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-300">
+                  {hit.claim}
+                </p>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  {hit.publisher} · {formatDate(hit.review_date, false)}
+                </p>
+                {hit.url ? (
+                  <a
+                    href={hit.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-cyan-400/80 hover:text-cyan-300"
+                  >
+                    Buka pemeriksaan <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : status === "no_match" ? (
+        <p className="text-xs leading-relaxed text-slate-500">
+          Belum ada pemeriksaan fakta publik yang cocok dengan klaim pada konten ini.
+          Ketiadaan catatan bukan bukti kebenaran.
+        </p>
+      ) : (
+        <p className="text-xs leading-relaxed text-amber-200/70">
+          {factcheck?.message ??
+            "Layanan pemeriksaan fakta eksternal tidak dapat dihubungi saat analisis dibuat."}
+        </p>
+      )}
+      <p className="mt-3 flex items-start gap-1.5 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
+        <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0 text-cyan-400/70" />
+        Hasil pemeriksaan pihak ketiga ditampilkan sebagai bukti pendukung, bukan pengganti
+        penilaian analis.
+      </p>
+    </Card>
+  );
+}
 
 function EvidenceRow({ item }: { item: Evidence }) {
   return (
@@ -259,6 +347,8 @@ export default function AnalysisDetail() {
         </div>
 
         <div className="space-y-6">
+          <FactCheckCard factcheck={data.factcheck} />
+
           <Card>
             <SectionHeading
               title="Konten terkait"

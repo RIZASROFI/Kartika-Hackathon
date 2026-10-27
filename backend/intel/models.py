@@ -54,6 +54,7 @@ class Analysis(models.Model):
     confidence = models.FloatField(default=0.5)
     summary = models.TextField()
     limitations = models.JSONField(default=list, blank=True)
+    factcheck = models.JSONField(default=dict, blank=True)
     processing_ms = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
@@ -109,6 +110,7 @@ class Evidence(models.Model):
         ("sumber_utama", "Sumber utama"),
         ("input_pengguna", "Input pengguna"),
         ("tautan", "Tautan referensi"),
+        ("factcheck", "Pemeriksaan fakta"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -125,6 +127,27 @@ class Evidence(models.Model):
 
     def __str__(self) -> str:
         return self.title[:80]
+
+
+class FactCheckQuery(models.Model):
+    """Cache respons fact-check API agar kuota hemat dan demo tetap jalan offline."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=24, default="google")
+    query_hash = models.CharField(max_length=64, unique=True)
+    query_text = models.CharField(max_length=512)
+    payload = models.JSONField(default=dict, blank=True)
+    hit_count = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        db_table = "factcheck_queries"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["expires_at"], name="ix_factcheck_expires_at")]
+
+    def __str__(self) -> str:
+        return self.query_text[:80]
 
 
 class CoordinationLink(models.Model):

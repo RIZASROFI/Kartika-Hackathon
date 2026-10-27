@@ -1,13 +1,5 @@
 import { useState } from "react";
-import {
-  BookOpen,
-  History,
-  LayoutDashboard,
-  Menu,
-  ScanLine,
-  ShieldCheck,
-  X,
-} from "lucide-react";
+import { BookOpen, History, LayoutDashboard, Menu, ScanLine, X } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { cn } from "../lib/utils";
@@ -35,8 +27,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <Link to="/" onClick={onNavigate} className="flex items-center gap-3 px-2">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-400/10">
-          <ShieldCheck className="h-5 w-5 text-cyan-300" />
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-cyan-400/30 bg-white/95">
+          <img
+            src="/kartika.jpg"
+            alt="Logo Kartika Cyber Hackathon 2026"
+            className="h-full w-full object-contain"
+          />
         </span>
         <span>
           <span className="block text-sm font-semibold tracking-[0.22em] text-white">KARTIKA</span>
@@ -119,7 +115,11 @@ export default function Layout() {
           <Menu className="h-4 w-4" />
         </button>
         <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-cyan-300" />
+          <img
+            src="/kartika.jpg"
+            alt="Logo Kartika Cyber Hackathon 2026"
+            className="h-7 w-7 rounded-md object-contain"
+          />
           <span className="text-sm font-semibold tracking-[0.2em] text-white">KARTIKA INTEL</span>
         </div>
         <div className="w-8" />
