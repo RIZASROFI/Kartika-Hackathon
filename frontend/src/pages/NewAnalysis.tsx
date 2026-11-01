@@ -60,7 +60,7 @@ const schema = z
 type FormValues = z.infer<typeof schema>;
 
 const MODES = [
-  { value: "url" as const, label: "URL artikel", icon: Link2 },
+  { value: "url" as const, label: "URL / postingan", icon: Link2 },
   { value: "text" as const, label: "Teks manual", icon: FileText },
 ];
 
@@ -117,8 +117,9 @@ export default function NewAnalysis() {
         <p className="label">Ingest & analyze</p>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-white">Analisis Konten</h1>
         <p className="mt-1.5 max-w-2xl text-sm text-slate-400">
-          Tempelkan URL artikel atau teks mentah. Mesin akan mengekstrak isi, menghitung empat
-          dimensi sinyal, dan menyusun laporan indikatif.
+          Tempelkan URL artikel, tautan postingan TikTok/Instagram/Facebook/X, atau teks mentah.
+          Mesin akan mengekstrak isi, menghitung empat dimensi sinyal, dan menyusun laporan
+          indikatif.
         </p>
       </div>
 
@@ -161,13 +162,13 @@ export default function NewAnalysis() {
             {mode === "url" ? (
               <div>
                 <label htmlFor="url" className="label">
-                  URL artikel
+                  URL artikel atau postingan
                 </label>
                 <input
                   id="url"
                   type="url"
                   inputMode="url"
-                  placeholder="https://contoh.id/artikel/yang-ingin-diperiksa"
+                  placeholder="https://contoh.id/artikel atau https://x.com/akun/status/123…"
                   className={cn("input mt-2", errors.url && "border-rose-400/50")}
                   aria-invalid={Boolean(errors.url)}
                   {...register("url")}
@@ -176,8 +177,8 @@ export default function NewAnalysis() {
                   <p className="mt-1.5 text-xs text-rose-300">{errors.url.message}</p>
                 ) : (
                   <p className="mt-1.5 text-xs text-slate-500">
-                    Server mengambil halaman, mengekstrak isi utama, lalu menganalisisnya. Host
-                    internal diblokir.
+                    Artikel dibaca langsung. Tautan TikTok, Instagram, Facebook, dan X diambil
+                    lewat UnifAPI (caption, akun, waktu unggah). Host internal diblokir.
                   </p>
                 )}
               </div>
@@ -298,8 +299,10 @@ export default function NewAnalysis() {
               <p className="text-xs font-semibold text-amber-200">Batas kemampuan</p>
             </div>
             <p className="mt-2 text-xs leading-relaxed text-amber-100/60">
-              Platform tidak mencocokkan fakta ke basis data eksternal dan tidak membaca metadata
-              akun. Skor tinggi berarti perlu ditinjau, bukan otomatis salah atau buatan AI.
+              Klaim dicocokkan ke pemeriksaan fakta Google dan sumber terbuka Exa, lalu dinilai
+              Gemini dari cuplikan tersebut. Untuk media sosial hanya caption/teks yang
+              dianalisis, bukan video atau audionya, dan metadata akun tetap tidak dibaca.
+              Skor tinggi berarti perlu ditinjau, bukan otomatis salah atau buatan AI.
             </p>
           </div>
 
@@ -310,10 +313,12 @@ export default function NewAnalysis() {
             </div>
             <ol className="mt-3 space-y-2 text-xs text-slate-500">
               <li>01 · Validasi sumber & proteksi SSRF</li>
-              <li>02 · Ekstraksi isi artikel (Trafilatura + BS4)</li>
+              <li>02 · Ekstraksi artikel atau postingan media sosial (UnifAPI)</li>
               <li>03 · Analisis heuristik empat dimensi</li>
               <li>04 · Pencocokan narasi dengan korpus tersimpan</li>
-              <li>05 · Penyimpanan temuan & bukti</li>
+              <li>05 · Pemeriksaan fakta (Google Fact Check Tools)</li>
+              <li>06 · Verifikasi klaim (Exa + Gemini)</li>
+              <li>07 · Penyimpanan temuan, sitasi & bukti</li>
             </ol>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, Inbox, Loader2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Inbox, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 
 import { LEVEL_META, verdictMeta } from "../lib/labels";
 import type { RiskLevel, Verdict } from "../lib/types";
@@ -174,6 +174,66 @@ export function ErrorPanel({ message, onRetry }: { message: string; onRetry?: ()
             Coba lagi
           </button>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel = "Hapus",
+  busy = false,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  busy?: boolean;
+  error?: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 p-4 backdrop-blur-sm">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="w-full max-w-md rounded-2xl border border-white/10 bg-ink-900 p-6 shadow-panel"
+      >
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-rose-400/20 bg-rose-400/10 text-rose-300">
+            <Trash2 className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-white">{title}</h2>
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-400">{description}</p>
+          </div>
+        </div>
+        {error ? <p className="mt-4 text-xs text-rose-300">{error}</p> : null}
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" className="btn-ghost" onClick={onCancel} disabled={busy}>
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {confirmLabel}
+          </button>
+        </div>
       </div>
     </div>
   );

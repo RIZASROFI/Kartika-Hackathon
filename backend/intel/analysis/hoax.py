@@ -120,4 +120,6 @@ def analyze_hoax(text: str, title: str | None = None) -> tuple[SignalResult, lis
         explanation=explanation,
         details=details,
     )
-    return signal, extract_claims(corpus, signal.score)
+    # Klaim diambil dari isi artikel saja: judul ikut dinilai pada sinyal, tetapi
+    # menempelkan judul ke kalimat pertama membuat klaim menjadi rancu.
+    return signal, extract_claims(text, signal.score)

@@ -26,7 +26,12 @@ import {
   VerdictBadge,
 } from "../components/ui";
 import { api } from "../lib/api";
-import { CATEGORY_META, CLAIM_VERDICT_META, verdictMeta } from "../lib/labels";
+import {
+  CATEGORY_META,
+  CLAIM_EVIDENCE_META,
+  CLAIM_VERDICT_META,
+  verdictMeta,
+} from "../lib/labels";
 import type { Evidence, FactCheckSummary, FactCheckVerdict } from "../lib/types";
 import { cn, formatDate, formatPercent, hoursLabel } from "../lib/utils";
 
@@ -35,6 +40,8 @@ const EVIDENCE_KIND_LABEL: Record<string, string> = {
   input_pengguna: "Input pengguna",
   tautan: "Tautan referensi",
   factcheck: "Pemeriksaan fakta",
+  pencarian_web: "Pencarian web terbuka",
+  konteks: "Konteks",
 };
 
 const FACTCHECK_META: Record<FactCheckVerdict, { label: string; badge: string }> = {
@@ -126,31 +133,46 @@ function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | u
 function EvidenceRow({ item }: { item: Evidence }) {
   return (
     <li className="rounded-xl border border-white/5 bg-white/[0.015] p-3.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-slate-200">
-            {item.url ? (
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1.5 hover:text-cyan-300"
-              >
-                {item.title}
-                <ExternalLink className="h-3 w-3 shrink-0" />
-              </a>
-            ) : (
-              item.title
-            )}
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-slate-200">
+          {item.url ? (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-start gap-1.5 hover:text-cyan-300 hover:underline"
+            >
+              {item.title}
+              <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+            </a>
+          ) : (
+            item.title
+          )}
+        </p>
+        <p className="mt-1 text-[11px] text-slate-500">
+          {EVIDENCE_KIND_LABEL[item.kind] ?? item.kind}
+          {item.publisher ? ` · ${item.publisher}` : ""} · diambil {formatDate(item.retrieved_at, false)}
+        </p>
+        {item.url ? (
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            title={item.url}
+            className="mt-2 flex items-center gap-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-2 py-1.5 text-[11px] text-cyan-300/90 transition hover:border-cyan-400/30 hover:bg-cyan-400/[0.06] hover:text-cyan-200"
+          >
+            <Link2 className="h-3 w-3 shrink-0" />
+            <span className="truncate">{item.url}</span>
+          </a>
+        ) : (
+          <p className="mt-2 flex items-center gap-1.5 rounded-lg border border-dashed border-white/5 px-2 py-1.5 text-[11px] text-slate-600">
+            <Link2 className="h-3 w-3 shrink-0" />
+            Tanpa tautan sumber
           </p>
-          <p className="mt-1 text-[11px] text-slate-500">
-            {EVIDENCE_KIND_LABEL[item.kind] ?? item.kind}
-            {item.publisher ? ` · ${item.publisher}` : ""} · diambil {formatDate(item.retrieved_at, false)}
-          </p>
-          {item.snippet ? (
-            <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-500">{item.snippet}</p>
-          ) : null}
-        </div>
+        )}
+        {item.snippet ? (
+          <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-500">{item.snippet}</p>
+        ) : null}
       </div>
     </li>
   );
@@ -208,7 +230,7 @@ export default function AnalysisDetail() {
             </h1>
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500">
               <span className="inline-flex items-center gap-1.5">
-                {data.source_type === "url" ? (
+                {data.source_type === "social" || data.source_type === "url" ? (
                   <Link2 className="h-3.5 w-3.5" />
                 ) : (
                   <FileText className="h-3.5 w-3.5" />
@@ -309,12 +331,20 @@ export default function AnalysisDetail() {
           <Card>
             <SectionHeading
               title="Klaim yang diekstrak"
-              subtitle="Kandidat klaim untuk diverifikasi analis manusia"
+              subtitle={
+                data.claim_check?.status === "verified"
+                  ? `Status klaim dinilai ${data.claim_check.model ?? "model bahasa"} dari ${data.claim_check.evidence_count ?? 0} sumber web · sitasi wajib diperiksa`
+                  : "Kandidat klaim untuk diverifikasi analis manusia"
+              }
             />
             {data.claims.length ? (
               <ol className="space-y-3">
                 {data.claims.map((claim, index) => {
                   const meta = CLAIM_VERDICT_META[claim.verdict] ?? CLAIM_VERDICT_META.belum_diverifikasi;
+                  const evidenceMeta = claim.evidence_status
+                    ? CLAIM_EVIDENCE_META[claim.evidence_status]
+                    : null;
+                  const citations = claim.citations ?? [];
                   return (
                     <li
                       key={claim.id}
@@ -324,14 +354,37 @@ export default function AnalysisDetail() {
                         <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-[11px] font-semibold text-slate-400">
                           {String(index + 1).padStart(2, "0")}
                         </span>
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <p className="text-sm leading-relaxed text-slate-200">{claim.text}</p>
                           <div className="mt-2.5 flex flex-wrap items-center gap-2">
                             <span className={cn("chip", meta.badge)}>{meta.label}</span>
+                            {evidenceMeta ? (
+                              <span className={cn("chip", evidenceMeta.badge)}>
+                                {evidenceMeta.label}
+                              </span>
+                            ) : null}
                           </div>
                           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                            {claim.rationale}
+                            {claim.verification_note || claim.rationale}
                           </p>
+                          {citations.length ? (
+                            <ul className="mt-2 space-y-1">
+                              {citations.map((citation) => (
+                                <li key={citation.url} className="text-[11px] leading-relaxed">
+                                  <a
+                                    href={citation.url}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    className="inline-flex items-center gap-1 font-medium text-cyan-400/80 hover:text-cyan-300"
+                                  >
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                    {citation.publisher || citation.title}
+                                  </a>
+                                  <span className="text-slate-600"> · {citation.title}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
                         </div>
                       </div>
                     </li>
@@ -341,8 +394,16 @@ export default function AnalysisDetail() {
             ) : (
               <p className="text-sm text-slate-500">
                 Tidak ada kalimat yang memenuhi pola klaim untuk diekstrak.
+                {data.claim_check?.status === "verified"
+                  ? " Pencarian sumber tetap dijalankan memakai judul atau kalimat pertama; hasilnya ada di panel Sumber & bukti."
+                  : ""}
               </p>
             )}
+            {data.claim_check?.message ? (
+              <p className="mt-3 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
+                {data.claim_check.message}
+              </p>
+            ) : null}
           </Card>
         </div>
 
@@ -400,7 +461,14 @@ export default function AnalysisDetail() {
           </Card>
 
           <Card>
-            <SectionHeading title="Sumber & bukti" subtitle="Jejak sumber yang dapat diaudit" />
+            <SectionHeading
+              title="Sumber & bukti"
+              subtitle={
+                data.evidence.length
+                  ? `Jejak sumber yang dapat diaudit · ${data.evidence.filter((item) => item.url).length} tautan terbuka`
+                  : "Jejak sumber yang dapat diaudit"
+              }
+            />
             {data.evidence.length ? (
               <ul className="space-y-2.5">
                 {data.evidence.map((item) => (

@@ -86,6 +86,17 @@ export const api = {
     return request<AnalysisDetail>(`/analyses/${id}`);
   },
 
+  deleteAnalysis(id: string): Promise<void> {
+    return request<void>(`/analyses/${id}`, { method: "DELETE" });
+  },
+
+  deleteAnalyses(ids: string[]): Promise<{ deleted: number }> {
+    return request<{ deleted: number }>("/analyses/bulk-delete", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+  },
+
   getDashboard(): Promise<DashboardSummary> {
     return request<DashboardSummary>("/dashboard/summary");
   },

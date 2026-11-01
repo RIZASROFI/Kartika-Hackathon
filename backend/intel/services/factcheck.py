@@ -92,7 +92,7 @@ RATING_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
 )
 
-TOKEN_RE = re.compile(r"[a-z0-9]+")
+TOKEN_RE = re.compile(r"[a-z]+|[0-9]+")
 STOPWORDS = {
     "yang",
     "untuk",
@@ -185,11 +185,19 @@ def classify_rating(rating: str | None) -> str:
 
 
 def _tokens(value: str) -> set[str]:
-    return {
-        token
-        for token in TOKEN_RE.findall(value.casefold())
-        if len(token) >= MIN_TOKEN_LENGTH and token not in STOPWORDS
-    }
+    """Token penting untuk pencocokan; angka dipertahankan karena sering jadi pembeda klaim.
+
+    Contoh: "PPN 12 persen" dan "bansos Rp 5 juta" hanya cocok dengan pemeriksaan
+    fakta yang menyebut angka yang sama, sehingga token seperti "12" atau "5" harus
+    ikut dibandingkan meski lebih pendek dari MIN_TOKEN_LENGTH.
+    """
+    tokens: set[str] = set()
+    for token in TOKEN_RE.findall(value.casefold()):
+        if token.isdigit():
+            tokens.add(token)
+        elif len(token) >= MIN_TOKEN_LENGTH and token not in STOPWORDS:
+            tokens.add(token)
+    return tokens
 
 
 def overlap_ratio(hit_text: str, source_tokens: set[str]) -> float:
@@ -198,6 +206,45 @@ def overlap_ratio(hit_text: str, source_tokens: set[str]) -> float:
     if not hit_tokens or not source_tokens:
         return 0.0
     return len(hit_tokens & source_tokens) / len(hit_tokens)
+
+
+def is_relevant_hit(
+    hit_text: str, *, query_tokens: set[str], source_tokens: set[str]
+) -> bool:
+    """Apakah klaim pemeriksa fakta membahas hal yang sama dengan konten.
+
+    Diuji dari dua arah karena judul sering memuat kata kunci klaim, sedangkan isi
+    konten panjang memuat istilah yang dipakai pemeriksa fakta. Angka diperlakukan
+    sebagai penanda klaim terkuat: dua klaim berbeda jarang berbagi nominal/tahun
+    yang sama, sehingga klaim yang menyebut angka hanya dicocokkan dengan angka sama.
+    """
+    threshold = settings.FACTCHECK_MIN_OVERLAP
+    hit_tokens = _tokens(hit_text)
+    if not hit_tokens:
+        return False
+
+    # Klaim dengan nominal/tahun/persentase berbeda (>= 2 digit) adalah klaim lain.
+    hit_numbers = {token for token in hit_tokens if token.isdigit() and len(token) >= 2}
+    context_numbers = {
+        token
+        for token in source_tokens | query_tokens
+        if token.isdigit() and len(token) >= 2
+    }
+    if hit_numbers and not hit_numbers <= context_numbers:
+        return False
+
+    if overlap_ratio(hit_text, source_tokens) >= threshold:
+        return True
+
+    shared = hit_tokens & query_tokens
+    if len(shared) < 2:
+        return False
+
+    # Judul dua-tiga kata tanpa satu pun angka terlalu umum untuk dicocokkan lewat kata.
+    if len(query_tokens) < 4 and not any(token.isdigit() for token in shared):
+        return False
+
+    return len(shared) / len(query_tokens) >= threshold
 
 
 def _query_hash(query: str) -> str:
@@ -307,13 +354,15 @@ def _fetch_claims(query: str) -> dict:
 
 
 def _extract_hits(payload: dict, *, query: str, source_tokens: set[str]) -> list[FactCheckHit]:
-    threshold = settings.FACTCHECK_MIN_OVERLAP
+    query_tokens = _tokens(query)
     hits: list[FactCheckHit] = []
     for claim_entry in payload.get("claims") or []:
         claim_text = normalize_whitespace(claim_entry.get("text") or "")
         if not claim_text:
             continue
-        if overlap_ratio(claim_text, source_tokens) < threshold:
+        if not is_relevant_hit(
+            claim_text, query_tokens=query_tokens, source_tokens=source_tokens
+        ):
             continue
         for review in claim_entry.get("claimReview") or []:
             url = (review.get("url") or "").strip()

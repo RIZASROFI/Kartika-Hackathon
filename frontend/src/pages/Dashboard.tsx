@@ -11,14 +11,11 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
-  Area,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
-  ComposedChart,
   LabelList,
-  Line,
   PolarAngleAxis,
   PolarGrid,
   PolarRadiusAxis,
@@ -44,7 +41,7 @@ import { VERDICT_META, verdictMeta } from "../lib/labels";
 import { formatDay, formatPercent, hoursLabel } from "../lib/utils";
 
 const TOOLTIP_STYLE = {
-  background: "#0B1220",
+  background: "#191C24",
   border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 12,
   fontSize: 12,
@@ -128,9 +125,8 @@ export default function Dashboard() {
       </div>
 
       <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/[0.04] px-4 py-3 text-xs leading-relaxed text-cyan-100/70">
-        <span className="font-semibold text-cyan-200">Mode demo.</span> Sebagian data awal adalah
-        skenario sintetis untuk memperagakan alur analisis. Semua skor bersifat indikatif dan
-        memerlukan verifikasi analis.
+        <span className="font-semibold text-cyan-200">Catatan.</span> Semua skor bersifat indikatif
+        dan memerlukan verifikasi analis sebelum dijadikan dasar tindakan.
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -182,13 +178,12 @@ export default function Dashboard() {
           />
           <div className="h-[268px]">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data.risk_trend} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.28} />
-                    <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <BarChart
+                data={data.risk_trend}
+                margin={{ top: 8, right: 4, left: -22, bottom: 0 }}
+                barGap={2}
+                barCategoryGap="28%"
+              >
                 <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -219,25 +214,24 @@ export default function Dashboard() {
                   labelStyle={{ color: "#94a3b8" }}
                   labelFormatter={(value) => formatDay(String(value))}
                 />
-                <Area
+                <Bar
                   yAxisId="left"
-                  type="monotone"
                   dataKey="analyses"
                   name="Analisis"
-                  stroke="#22d3ee"
-                  strokeWidth={2}
-                  fill="url(#trendFill)"
+                  fill="#22d3ee"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={22}
                 />
-                <Line
+                <Bar
                   yAxisId="right"
-                  type="monotone"
                   dataKey="average_risk"
                   name="Rata-rata risiko"
-                  stroke="#fbbf24"
-                  strokeWidth={2}
-                  dot={false}
+                  fill="#fbbf24"
+                  fillOpacity={0.85}
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={22}
                 />
-              </ComposedChart>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </Card>

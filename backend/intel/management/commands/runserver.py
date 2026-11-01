@@ -1,7 +1,8 @@
 """`manage.py runserver` dengan persiapan otomatis.
 
-Menjalankan migrasi, mengisi data demo bila database kosong, membangun frontend
-bila `frontend/dist` belum ada, lalu menyerahkan kendali ke runserver Django.
+Menjalankan migrasi, membangun frontend bila `frontend/dist` belum ada, lalu
+menyerahkan kendali ke runserver Django. Tidak ada pengisian data contoh:
+database dibiarkan apa adanya agar analisis yang tampil hanya konten nyata.
 """
 
 from django.contrib.staticfiles.management.commands.runserver import (
@@ -10,22 +11,13 @@ from django.contrib.staticfiles.management.commands.runserver import (
 from django.core.management import call_command
 
 from intel.services.frontend import FrontendBuildError, ensure_frontend_build
-from intel.services.seed_service import seed_demo_data
 
 
 class Command(RunserverCommand):
-    help = (
-        "Siapkan database + data demo + frontend, lalu jalankan server pengembangan."
-    )
+    help = "Siapkan database + frontend, lalu jalankan server pengembangan."
 
     def handle(self, *args, **options):
         call_command("migrate", interactive=False, verbosity=0)
-
-        created = seed_demo_data()
-        if created:
-            self.stdout.write(
-                self.style.SUCCESS(f"Seed demo: {created} analisis dimuat.")
-            )
 
         try:
             built = ensure_frontend_build()

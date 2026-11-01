@@ -1,0 +1,2 @@
+(.venv) PS C:\Kartika Hackathon\backend> python manage.py runserver
+.venv\Scripts\Activate.ps1

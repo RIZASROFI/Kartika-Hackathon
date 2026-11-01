@@ -22,6 +22,23 @@ body {
   background-attachment: fixed;
 }
 
+/* Watermark logo Cynteltika di latar seluruh aplikasi. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("/Cynteltika.jpeg");
+  background-repeat: no-repeat;
+  background-position: center 38%;
+  background-size: min(1180px, 94vw) auto;
+  opacity: 0.16;
+  mix-blend-mode: screen;
+  -webkit-mask-image: radial-gradient(ellipse 78% 72% at 50% 42%, #000 45%, transparent 100%);
+  mask-image: radial-gradient(ellipse 78% 72% at 50% 42%, #000 45%, transparent 100%);
+}
+
 ::selection {
   @apply bg-cyan-400/30 text-white;
 }

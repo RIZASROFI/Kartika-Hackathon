@@ -1,6 +1,7 @@
 from django.urls import path
 
 from intel.views import (
+    AnalysisBulkDeleteView,
     AnalysisDetailView,
     AnalysisListCreateView,
     DashboardSummaryView,
@@ -8,6 +9,11 @@ from intel.views import (
 
 urlpatterns = [
     path("analyses", AnalysisListCreateView.as_view(), name="analysis-list"),
+    path(
+        "analyses/bulk-delete",
+        AnalysisBulkDeleteView.as_view(),
+        name="analysis-bulk-delete",
+    ),
     path(
         "analyses/<str:analysis_id>",
         AnalysisDetailView.as_view(),

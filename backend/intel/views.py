@@ -19,9 +19,10 @@ from intel.serializers import (
     AnalysisDetailSerializer,
     AnalysisListItemSerializer,
 )
-from intel.services.analysis_service import create_analysis
+from intel.services.analysis_service import create_analysis, delete_analyses
 from intel.services.dashboard_service import build_dashboard
 from intel.services.extraction import ExtractionError
+from intel.services.social import SocialFetchError
 
 
 def _detail_queryset():
@@ -36,6 +37,18 @@ def _detail_queryset():
             ),
         ),
     )
+
+
+def _find_analysis(analysis_id: str) -> Analysis:
+    try:
+        uuid.UUID(str(analysis_id))
+    except (ValueError, TypeError) as exc:
+        raise NotFound("Analisis tidak ditemukan.") from exc
+
+    analysis = Analysis.objects.filter(pk=analysis_id).first()
+    if analysis is None:
+        raise NotFound("Analisis tidak ditemukan.")
+    return analysis
 
 
 class AnalysisListCreateView(APIView):
@@ -72,7 +85,7 @@ class AnalysisListCreateView(APIView):
 
         try:
             analysis = create_analysis(**serializer.validated_data)
-        except ExtractionError as exc:
+        except (ExtractionError, SocialFetchError) as exc:
             return Response(
                 {"detail": exc.message}, status=exc.status_code
             )
@@ -86,15 +99,47 @@ class AnalysisListCreateView(APIView):
 
 class AnalysisDetailView(APIView):
     def get(self, request, analysis_id: str):
-        try:
-            uuid.UUID(str(analysis_id))
-        except (ValueError, TypeError) as exc:
-            raise NotFound("Analisis tidak ditemukan.") from exc
-
-        analysis = _detail_queryset().filter(pk=analysis_id).first()
-        if analysis is None:
+        analysis = _find_analysis(analysis_id)
+        detailed = _detail_queryset().filter(pk=analysis.pk).first()
+        if detailed is None:
             raise NotFound("Analisis tidak ditemukan.")
-        return Response(AnalysisDetailSerializer(analysis).data)
+        return Response(AnalysisDetailSerializer(detailed).data)
+
+    def delete(self, request, analysis_id: str):
+        analysis = _find_analysis(analysis_id)
+        delete_analyses([str(analysis.pk)])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AnalysisBulkDeleteView(APIView):
+    """Hapus beberapa analisis sekaligus dari halaman riwayat."""
+
+    MAX_IDS = 200
+
+    def post(self, request):
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not ids:
+            return Response(
+                {"detail": "ids harus berupa daftar ID analisis yang akan dihapus."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(ids) > self.MAX_IDS:
+            return Response(
+                {"detail": f"Maksimal {self.MAX_IDS} analisis per permintaan."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cleaned: list[str] = []
+        for value in ids:
+            try:
+                cleaned.append(str(uuid.UUID(str(value))))
+            except (ValueError, TypeError):
+                return Response(
+                    {"detail": "Daftar ids memuat ID yang tidak valid."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        return Response({"deleted": delete_analyses(cleaned)})
 
 
 class DashboardSummaryView(APIView):

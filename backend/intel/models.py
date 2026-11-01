@@ -11,7 +11,11 @@ from django.utils import timezone
 class ContentItem(models.Model):
     """Konten sumber yang dianalisis (teks manual atau artikel URL)."""
 
-    SOURCE_TYPE_CHOICES = [("url", "URL artikel"), ("text", "Teks manual")]
+    SOURCE_TYPE_CHOICES = [
+        ("url", "URL artikel"),
+        ("text", "Teks manual"),
+        ("social", "Media sosial"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source_type = models.CharField(max_length=16, choices=SOURCE_TYPE_CHOICES)
@@ -55,6 +59,7 @@ class Analysis(models.Model):
     summary = models.TextField()
     limitations = models.JSONField(default=list, blank=True)
     factcheck = models.JSONField(default=dict, blank=True)
+    claim_check = models.JSONField(default=dict, blank=True)
     processing_ms = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
@@ -91,11 +96,23 @@ class AnalysisSignal(models.Model):
 
 
 class Claim(models.Model):
+    EVIDENCE_STATUS_CHOICES = [
+        ("didukung", "Didukung bukti"),
+        ("dibantah", "Dibantah bukti"),
+        ("tidak_cukup_bukti", "Tidak cukup bukti"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     analysis = models.ForeignKey(Analysis, on_delete=models.CASCADE, related_name="claims")
     text = models.TextField()
     verdict = models.CharField(max_length=40)
     rationale = models.TextField()
+    evidence_status = models.CharField(
+        max_length=24, choices=EVIDENCE_STATUS_CHOICES, blank=True, default=""
+    )
+    verification_note = models.TextField(blank=True, default="")
+    citations = models.JSONField(default=list, blank=True)
+    verified_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -111,6 +128,8 @@ class Evidence(models.Model):
         ("input_pengguna", "Input pengguna"),
         ("tautan", "Tautan referensi"),
         ("factcheck", "Pemeriksaan fakta"),
+        ("pencarian_web", "Pencarian web terbuka"),
+        ("konteks", "Konteks"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

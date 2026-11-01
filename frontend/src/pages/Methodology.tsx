@@ -23,28 +23,78 @@ import type { RiskLevel, SignalCategory } from "../lib/types";
 const PIPELINE = [
   {
     icon: Link2,
-    title: "Ingest",
-    text: "Menerima URL artikel atau teks manual. URL divalidasi dan diperiksa terhadap alamat internal (proteksi SSRF).",
+    title: "Ingest & validasi",
+    service: "Lokal",
+    text: "URL diperiksa (http/https, tanpa host atau IP internal, batas 3 MB) atau teks manual minimal 8 kata diterima.",
   },
   {
     icon: ScanText,
-    title: "Ekstraksi",
-    text: "Trafilatura mengambil isi utama; BeautifulSoup melengkapi metadata judul, penulis, penerbit, tanggal, dan tautan.",
+    title: "Ekstraksi isi",
+    service: "Trafilatura + BeautifulSoup",
+    text: "Isi utama artikel diambil; metadata judul, penulis, penerbit, tanggal, dan sampai 5 tautan referensi dilengkapi.",
   },
   {
     icon: Gauge,
-    title: "Penilaian",
-    text: "Empat modul heuristik menghitung skor independen. Sinyal terkuat mendominasi skor risiko akhir.",
+    title: "Analisis heuristik",
+    service: "Lokal",
+    text: "Empat sinyal independen dihitung dan kandidat klaim diekstrak dari kalimat yang memuat penanda klaim atau angka.",
   },
   {
     icon: Network,
-    title: "Korelasi",
-    text: "Isi dibandingkan dengan korpus tersimpan dalam jendela waktu untuk menemukan reproduksi narasi.",
+    title: "Korelasi korpus",
+    service: "Lokal",
+    text: "Shingle 4-kata dibandingkan dengan korpus tersimpan (Jaccard, ambang 28%, jendela ±72 jam) untuk menemukan reproduksi narasi.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Pemeriksaan fakta",
+    service: "Google Fact Check Tools",
+    text: "Judul dan klaim dicari ke indeks ClaimReview; hasil disaring memakai kemiripan kata dan angka agar tetap relevan.",
+  },
+  {
+    icon: Sparkles,
+    title: "Verifikasi klaim",
+    service: "Exa + Gemini",
+    text: "Exa mengambil cuplikan sumber terbuka, lalu Gemini menilai tiap klaim hanya dari cuplikan tersebut dan wajib menyertakan sitasi.",
   },
   {
     icon: Database,
     title: "Penyimpanan",
-    text: "Temuan, klaim, tautan bukti, dan relasi koordinasi disimpan untuk audit dan penelusuran lanjutan.",
+    service: "Basis data",
+    text: "Temuan, klaim, sitasi, bukti, dan relasi koordinasi disimpan untuk audit dan penelusuran lanjutan.",
+  },
+];
+
+const SERVICES = [
+  {
+    icon: Gauge,
+    name: "Mesin heuristik (lokal)",
+    text: "Empat dimensi sinyal, ekstraksi kandidat klaim, dan kemiripan Jaccard berjalan di server tanpa memanggil API eksternal.",
+  },
+  {
+    icon: ScanText,
+    name: "Trafilatura + BeautifulSoup",
+    text: "Mengambil isi utama halaman dan metadata judul, penulis, penerbit, tanggal, serta tautan referensi.",
+  },
+  {
+    icon: ShieldCheck,
+    name: "Google Fact Check Tools",
+    text: "Menanyakan apakah klaim sudah diperiksa lembaga pemeriksa fakta (markup ClaimReview). Hasil di-cache 7 hari dan tidak mengubah skor heuristik.",
+  },
+  {
+    icon: Globe,
+    name: "Exa — pencarian sumber terbuka",
+    text: "Mengambil cuplikan halaman publik untuk tiap klaim: maksimal 2 klaim × 3 hasil, cuplikan 600 karakter. Tanpa klaim, kueri memakai judul atau kalimat pertama.",
+  },
+  {
+    icon: Sparkles,
+    name: "Gemini — penilai klaim",
+    text: "Menilai status klaim (didukung, dibantah, tidak cukup bukti) hanya dari cuplikan Exa, memberi alasan maksimal 40 kata, dan wajib menyertakan URL sitasi yang benar-benar ada di hasil pencarian.",
+  },
+  {
+    icon: Database,
+    name: "Basis data lokal",
+    text: "Menyimpan analisis, sinyal, klaim, sitasi, bukti, cache pemeriksaan fakta, dan relasi koordinasi.",
   },
 ];
 
@@ -57,6 +107,8 @@ const DIMENSIONS: Array<{ key: SignalCategory; weight: string }> = [
 
 const LIMITATIONS = [
   "Pemeriksaan fakta eksternal bergantung pada cakupan Google Fact Check Tools; ketiadaan catatan bukan bukti kebenaran.",
+  "Status klaim dinilai model bahasa (Gemini) dari cuplikan Exa; model dapat salah membaca sumber, sehingga setiap sitasi wajib dibuka analis.",
+  "Pencarian Exa hanya menjangkau halaman publik yang terindeks; konten berbayar, tertutup, atau belum terindeks tidak terjangkau.",
   "Sinyal bot/AI hanya membaca pola teks; metadata akun, waktu unggah, dan jaringan interaksi belum tersedia.",
   "Leksikon provokasi dapat melewatkan sarkasme, ironi, kutipan berita, atau konteks budaya lokal.",
   "Kemiripan teks yang tinggi tidak membuktikan aktor yang sama; bisa terjadi karena sindikasi berita.",
@@ -74,7 +126,8 @@ export default function Methodology() {
         <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-slate-400">
           KARTIKA Intel membantu analis memprioritaskan konten yang perlu ditinjau. Platform ini
           tidak menetapkan benar atau salah secara otomatis, dan tidak menuduh individu atau
-          organisasi.
+          organisasi. Layanan eksternal yang dipakai hanya Google Fact Check Tools, Exa, dan Gemini;
+          sisanya berjalan lokal di server.
         </p>
       </div>
 
@@ -83,25 +136,69 @@ export default function Methodology() {
           <Sparkles className="h-4 w-4 text-cyan-300" />
           <h2 className="text-sm font-semibold text-white">Alur pemrosesan</h2>
         </div>
-        <ol className="grid gap-4 md:grid-cols-5">
+        <ol className="space-y-2.5">
           {PIPELINE.map((step, index) => {
             const Icon = step.icon;
             return (
-              <li key={step.title} className="rounded-xl border border-white/5 bg-white/[0.015] p-3.5">
-                <div className="flex items-center justify-between">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-400/15 bg-cyan-400/10">
-                    <Icon className="h-3.5 w-3.5 text-cyan-300" />
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-600">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
+              <li
+                key={step.title}
+                className="flex gap-3 rounded-xl border border-white/5 bg-white/[0.015] p-3.5"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-400/15 bg-cyan-400/10">
+                  <Icon className="h-4 w-4 text-cyan-300" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-200">{step.title}</p>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-md border border-white/5 bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                        {step.service}
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-600">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{step.text}</p>
                 </div>
-                <p className="mt-2.5 text-xs font-semibold text-slate-200">{step.title}</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{step.text}</p>
               </li>
             );
           })}
         </ol>
+      </Card>
+
+      <Card>
+        <div className="mb-5 flex items-center gap-2">
+          <Globe className="h-4 w-4 text-cyan-300" />
+          <h2 className="text-sm font-semibold text-white">Layanan & data yang digunakan</h2>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {SERVICES.map((service) => {
+            const Icon = service.icon;
+            return (
+              <div
+                key={service.name}
+                className="flex gap-3 rounded-xl border border-white/5 bg-white/[0.015] p-3.5"
+              >
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/5 bg-white/[0.03]">
+                  <Icon className="h-4 w-4 text-slate-300" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-200">{service.name}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    {service.text}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-4 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
+          Tanpa kunci API, langkah Google Fact Check, Exa, dan Gemini dilewati secara otomatis dan
+          laporan mencantumkan batasannya. Endpoint serta model bahasa diatur lewat
+          <span className="font-mono text-slate-400"> LLM_BASE_URL</span> dan
+          <span className="font-mono text-slate-400"> LLM_MODEL</span> (API kompatibel OpenAI).
+        </p>
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
@@ -268,31 +365,49 @@ export default function Methodology() {
         <Card>
           <div className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-violet-300" />
-            <h2 className="text-sm font-semibold text-white">Roadmap integrasi LLM</h2>
+            <h2 className="text-sm font-semibold text-white">Verifikasi klaim berbasis AI</h2>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">
-            Penilaian sinyal berjalan lokal; hanya pencarian pemeriksaan fakta yang memanggil API
-            eksternal. Lapisan bahasa akan ditambahkan tanpa mengubah kontrak API:
+            Penilaian sinyal tetap berjalan lokal. Hanya pemeriksaan fakta Google dan verifikasi
+            klaim Exa + Gemini yang memanggil layanan eksternal:
           </p>
           <ol className="mt-4 space-y-2.5 text-xs leading-relaxed text-slate-400">
             <li className="flex gap-2">
               <span className="font-mono text-[10px] text-slate-600">01</span>
-              Ringkasan klaim dan penalaran verdict dengan kutipan sumber.
+              <span>
+                <span className="font-medium text-slate-200">Retrieval.</span> Exa mencari sumber
+                terbuka untuk tiap klaim (maksimal 2 klaim, 3 hasil per klaim); bila tidak ada
+                klaim, judul atau kalimat pertama dipakai sebagai kueri.
+              </span>
             </li>
             <li className="flex gap-2">
               <span className="font-mono text-[10px] text-slate-600">02</span>
-              Pencocokan semantik dan sumber primer (mis. API MAFINDO) untuk memperluas cakupan
-              pemeriksaan fakta.
+              <span>
+                <span className="font-medium text-slate-200">Penilaian.</span> Gemini menilai klaim
+                hanya dari cuplikan yang diberikan dan mengembalikan JSON berisi status, alasan,
+                dan daftar sitasi.
+              </span>
             </li>
             <li className="flex gap-2">
               <span className="font-mono text-[10px] text-slate-600">03</span>
-              Penjelasan multibahasa dan laporan investigasi siap unduh.
+              <span>
+                <span className="font-medium text-slate-200">Validasi sitasi.</span> URL harus
+                cocok dengan hasil pencarian; status tanpa sitasi valid otomatis diturunkan menjadi
+                “tidak cukup bukti”. Hanya sumber yang dikutip disimpan sebagai bukti.
+              </span>
             </li>
             <li className="flex gap-2">
               <span className="font-mono text-[10px] text-slate-600">04</span>
-              Klasifikasi sinyal akun dengan data aktivitas yang tersedia secara sah.
+              <span>
+                <span className="font-medium text-slate-200">Ketahanan.</span> Kegagalan jaringan
+                atau kuota dicatat sebagai status di laporan, dan analisis heuristik tetap selesai.
+              </span>
             </li>
           </ol>
+          <p className="mt-4 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
+            Rencana berikutnya: sumber primer pemeriksa fakta Indonesia (mis. CekFakta/MAFINDO),
+            penjelasan multibahasa, laporan siap unduh, dan klasifikasi sinyal akun.
+          </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="chip border-white/10 bg-white/5 text-slate-400">
               <Newspaper className="h-3 w-3" /> Hoax

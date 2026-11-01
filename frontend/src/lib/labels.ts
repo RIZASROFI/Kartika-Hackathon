@@ -141,6 +141,21 @@ export const CLAIM_VERDICT_META: Record<string, { label: string; badge: string }
   },
 };
 
+export const CLAIM_EVIDENCE_META: Record<string, { label: string; badge: string }> = {
+  didukung: {
+    label: "Didukung bukti",
+    badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  },
+  dibantah: {
+    label: "Dibantah bukti",
+    badge: "border-rose-400/30 bg-rose-400/10 text-rose-300",
+  },
+  tidak_cukup_bukti: {
+    label: "Tidak cukup bukti",
+    badge: "border-slate-400/20 bg-slate-400/10 text-slate-300",
+  },
+};
+
 export function verdictMeta(verdict: Verdict): VerdictMeta {
   return VERDICT_META[verdict] ?? VERDICT_META.perlu_verifikasi;
 }

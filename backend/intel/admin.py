@@ -56,7 +56,7 @@ class AnalysisSignalInline(ReadOnlyInline):
 
 class ClaimInline(ReadOnlyInline):
     model = Claim
-    fields = ("text", "verdict", "rationale")
+    fields = ("text", "verdict", "evidence_status", "verification_note", "citations")
     readonly_fields = fields
 
 
@@ -93,6 +93,7 @@ class AnalysisAdmin(admin.ModelAdmin):
         "summary",
         "limitations",
         "factcheck",
+        "claim_check",
         "processing_ms",
         "created_at",
     )

@@ -20,11 +20,40 @@ export interface Signal {
   details: string[];
 }
 
+export type EvidenceStatus = "didukung" | "dibantah" | "tidak_cukup_bukti";
+
+export interface ClaimCitation {
+  title: string;
+  url: string;
+  publisher: string;
+  snippet?: string;
+}
+
 export interface Claim {
   id: string;
   text: string;
   verdict: string;
   rationale: string;
+  evidence_status?: EvidenceStatus | "";
+  verification_note?: string;
+  citations?: ClaimCitation[];
+  verified_at?: string | null;
+}
+
+export interface ClaimCheckSummary {
+  provider: string;
+  status: "verified" | "no_evidence" | "unavailable" | "disabled";
+  model: string | null;
+  message: string | null;
+  claim_count: number;
+  verified_count: number;
+  evidence_count: number;
+  claims: Array<{
+    claim: string;
+    status: EvidenceStatus;
+    rationale: string;
+    citations: ClaimCitation[];
+  }>;
 }
 
 export interface Evidence {
@@ -71,7 +100,7 @@ export interface RelatedAnalysis {
 }
 
 export interface ContentMeta {
-  source_type: "url" | "text";
+  source_type: "url" | "text" | "social";
   url: string | null;
   title: string | null;
   author: string | null;
@@ -88,7 +117,7 @@ export interface AnalysisListItem {
   risk_level: RiskLevel;
   confidence: number;
   summary: string;
-  source_type: "url" | "text";
+  source_type: "url" | "text" | "social";
   url: string | null;
   publisher: string | null;
   created_at: string;
@@ -100,6 +129,7 @@ export interface AnalysisDetail extends AnalysisListItem {
   processing_ms: number;
   limitations: string[];
   factcheck: Partial<FactCheckSummary>;
+  claim_check: Partial<ClaimCheckSummary>;
   content: ContentMeta;
   signals: Signal[];
   claims: Claim[];

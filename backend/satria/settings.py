@@ -188,9 +188,32 @@ FACTCHECK_CACHE_TTL_HOURS = env_int("FACTCHECK_CACHE_TTL_HOURS", 168)
 FACTCHECK_MIN_OVERLAP = env_float("FACTCHECK_MIN_OVERLAP", 0.45)
 FACTCHECK_LANGUAGE_CODE = os.getenv("FACTCHECK_LANGUAGE_CODE", "").strip()
 
+# --- Verifikasi klaim berbasis AI (pencarian web Exa + model bahasa) ---
+# Nonaktif otomatis saat pengujian agar suite tidak memanggil jaringan.
+AI_CLAIM_CHECK_ENABLED = env_bool("AI_CLAIM_CHECK_ENABLED", True) and not RUNNING_TESTS
+EXA_API_KEY = os.getenv("EXA_API_KEY", "").strip()
+EXA_BASE_URL = (os.getenv("EXA_BASE_URL") or "https://api.exa.ai").rstrip("/")
+EXA_TIMEOUT_SECONDS = env_float("EXA_TIMEOUT_SECONDS", 12.0)
+EXA_RESULTS_PER_CLAIM = env_int("EXA_RESULTS_PER_CLAIM", 3)
+EXA_SNIPPET_CHARS = env_int("EXA_SNIPPET_CHARS", 600)
+
+CLAIM_CHECK_MAX_CLAIMS = env_int("CLAIM_CHECK_MAX_CLAIMS", 2)
+CLAIM_CHECK_MAX_CITATIONS = env_int("CLAIM_CHECK_MAX_CITATIONS", 3)
+
 LLM_ENABLED = env_bool("LLM_ENABLED", False)
 LLM_API_KEY = os.getenv("LLM_API_KEY") or None
 LLM_MODEL = os.getenv("LLM_MODEL") or None
+# Endpoint apa pun yang kompatibel OpenAI: Groq, Gemini, OpenRouter, Ollama lokal.
+LLM_BASE_URL = (os.getenv("LLM_BASE_URL") or "https://api.groq.com/openai/v1").rstrip("/")
+LLM_TIMEOUT_SECONDS = env_float("LLM_TIMEOUT_SECONDS", 20.0)
+LLM_MAX_TOKENS = env_int("LLM_MAX_TOKENS", 2048)
+
+# --- Ingest postingan media sosial publik (UnifAPI) ---
+# Nonaktif secara efektif bila kunci kosong: URL media sosial akan ditolak
+# dengan pesan yang meminta teks ditempel manual.
+UNIFAPI_API_KEY = os.getenv("UNIFAPI_API_KEY", "").strip()
+UNIFAPI_BASE_URL = (os.getenv("UNIFAPI_BASE_URL") or "https://api.unifapi.com").rstrip("/")
+SOCIAL_FETCH_TIMEOUT_SECONDS = env_float("SOCIAL_FETCH_TIMEOUT_SECONDS", 15.0)
 
 LOGGING = {
     "version": 1,

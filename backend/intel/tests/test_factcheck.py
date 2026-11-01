@@ -8,8 +8,10 @@ from intel.models import Analysis, FactCheckQuery
 from intel.services.analysis_service import create_analysis
 from intel.services.factcheck import (
     FactCheckError,
+    _tokens,
     apply_limitation,
     classify_rating,
+    is_relevant_hit,
     overlap_ratio,
     run_factcheck,
 )
@@ -72,6 +74,40 @@ class RatingClassificationTests(TestCase):
         self.assertLess(overlap_ratio("Vaksin covid memakai microchip", source), 0.45)
 
 
+class RelevanceTests(TestCase):
+    def test_numbers_are_kept_as_tokens(self) -> None:
+        self.assertEqual(_tokens("Rp5,4 Juta"), {"5", "4", "juta"})
+        self.assertIn("12", _tokens("PPN 12 persen"))
+
+    def test_paraphrased_claim_with_same_number_is_matched(self) -> None:
+        self.assertTrue(
+            is_relevant_hit(
+                "Tautan Pendaftaran Bansos, Langsung Cair Rp5,4 Juta",
+                query_tokens=_tokens("Bansos Rp 5 juta lewat link"),
+                source_tokens=_tokens("Bantuan sosial dibagikan lewat link"),
+            )
+        )
+
+    def test_different_number_is_a_different_claim(self) -> None:
+        self.assertFalse(
+            is_relevant_hit(
+                "Bansos Rp 10 juta cair lewat link",
+                query_tokens=_tokens("Bansos Rp 5 juta lewat link"),
+                source_tokens=_tokens("Bansos Rp 5 juta cair lewat link"),
+            )
+        )
+
+    def test_short_title_without_numbers_is_not_enough(self) -> None:
+        self.assertFalse(
+            is_relevant_hit(
+                "[SALAH] Prabowo Kerahkan Alutsista karena Malaysia dan Singapura "
+                "Ancam Kedaulatan RI",
+                query_tokens=_tokens("Prabowo Singapura"),
+                source_tokens=_tokens("Presiden Prabowo menerima Menlu Singapura"),
+            )
+        )
+
+
 @override_settings(**TEST_SETTINGS)
 class FactCheckClientTests(TestCase):
     def test_matches_and_caches_google_results(self) -> None:
@@ -107,6 +143,35 @@ class FactCheckClientTests(TestCase):
         self.assertEqual(result.status, "unavailable")
         self.assertEqual(result.hits, [])
         self.assertIn("Koneksi gagal", result.message or "")
+
+    def test_paraphrased_factcheck_is_reported(self) -> None:
+        payload = {
+            "claims": [
+                {
+                    "text": "Tautan Pendaftaran Bansos, Langsung Cair Rp5,4 Juta",
+                    "claimReview": [
+                        {
+                            "publisher": {"name": "TurnBackHoax.ID"},
+                            "url": "https://turnbackhoax.id/bansos-rp54-juta",
+                            "title": "Cek fakta tautan bansos",
+                            "reviewDate": "2026-02-02T00:00:00Z",
+                            "textualRating": "Salah",
+                        }
+                    ],
+                }
+            ]
+        }
+        with mock.patch(
+            "intel.services.factcheck._fetch_claims", return_value=payload
+        ):
+            result = run_factcheck(
+                text="Bantuan sosial dibagikan lewat link tanpa keterangan resmi.",
+                title="Bansos Rp 5 juta lewat link",
+            )
+
+        self.assertEqual(result.status, "matched")
+        self.assertEqual(result.hits[0].publisher, "TurnBackHoax.ID")
+        self.assertEqual(result.hits[0].status, "hoax")
 
     def test_irrelevant_hits_are_discarded(self) -> None:
         with mock.patch(

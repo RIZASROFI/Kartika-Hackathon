@@ -27,8 +27,14 @@ from intel.models import (
     CoordinationLink,
     Evidence,
 )
+from intel.services.claim_verification import (
+    ClaimCheckResult,
+    apply_claim_check_limitation,
+    run_claim_verification,
+)
 from intel.services.extraction import ExtractedArticle, ExtractionError, extract_article
 from intel.services.factcheck import FactCheckResult, apply_limitation, run_factcheck
+from intel.services.social import detect_platform, fetch_social_post
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +136,7 @@ def _persist_result(
     article_links: list[dict[str, str]] | None = None,
     created_at: datetime | None = None,
     factcheck: FactCheckResult | None = None,
+    claim_check: ClaimCheckResult | None = None,
 ) -> Analysis:
     analysis = Analysis.objects.create(
         content=db_content,
@@ -142,6 +149,7 @@ def _persist_result(
         summary=outcome.summary,
         limitations=outcome.limitations,
         factcheck=factcheck.to_json() if factcheck else {},
+        claim_check=claim_check.to_json() if claim_check else {},
         processing_ms=processing_ms,
         created_at=_as_aware(created_at) or timezone.now(),
     )
@@ -162,6 +170,10 @@ def _persist_result(
         ]
     )
 
+    verifications = {
+        item.claim: item for item in (claim_check.claims if claim_check else [])
+    }
+    verified_at = timezone.now() if claim_check and claim_check.status == "verified" else None
     Claim.objects.bulk_create(
         [
             Claim(
@@ -169,6 +181,22 @@ def _persist_result(
                 text=claim.text,
                 verdict=claim.verdict,
                 rationale=claim.rationale,
+                evidence_status=(
+                    verifications[claim.text].status
+                    if claim.text in verifications
+                    else ""
+                ),
+                verification_note=(
+                    verifications[claim.text].rationale
+                    if claim.text in verifications
+                    else ""
+                ),
+                citations=(
+                    verifications[claim.text].citations
+                    if claim.text in verifications
+                    else []
+                ),
+                verified_at=verified_at if claim.text in verifications else None,
             )
             for claim in outcome.claims
         ]
@@ -197,6 +225,27 @@ def _persist_result(
             publisher=hit.publisher,
             kind="factcheck",
             snippet=f"{hit.rating} · {hit.claim}",
+        )
+
+    # Hanya sumber yang benar-benar dikutip model yang disimpan sebagai bukti.
+    cited_urls = {
+        citation.get("url")
+        for item in (claim_check.claims if claim_check else [])
+        for citation in item.citations
+        if citation.get("url")
+    }
+    stored_urls: set[str] = set()
+    for item in claim_check.evidence if claim_check else []:
+        if item.url not in cited_urls or item.url in stored_urls:
+            continue
+        stored_urls.add(item.url)
+        Evidence.objects.create(
+            analysis=analysis,
+            title=item.title,
+            url=item.url,
+            publisher=item.publisher,
+            kind="pencarian_web",
+            snippet=item.snippet[:280] or None,
         )
 
     existing_pairs = set(
@@ -316,10 +365,16 @@ def _refresh_coordination_scoring(analysis_id) -> None:
     analysis.confidence = assessment.confidence
     analysis.summary = assessment.summary
     factcheck_status = (analysis.factcheck or {}).get("status")
-    analysis.limitations = (
+    limitations = (
         apply_limitation(assessment.limitations, factcheck_status)
         if factcheck_status
         else assessment.limitations
+    )
+    claim_check_status = (analysis.claim_check or {}).get("status")
+    analysis.limitations = (
+        apply_claim_check_limitation(limitations, claim_check_status)
+        if claim_check_status
+        else limitations
     )
     analysis.save(
         update_fields=[
@@ -341,6 +396,7 @@ def _analyze_content(
     started_at: float | None = None,
     created_at: datetime | None = None,
     use_factcheck: bool = True,
+    use_ai_check: bool = True,
 ) -> Analysis:
     pipeline_started = time.perf_counter()
     candidates, corpus_size = _load_candidates(
@@ -368,6 +424,19 @@ def _analyze_content(
         if factcheck.status in {"matched", "no_match", "unavailable"}:
             outcome.limitations = apply_limitation(outcome.limitations, factcheck.status)
 
+    # Verifikasi klaim memanggil pencarian web + model bahasa, jadi juga di luar
+    # transaksi dan tidak boleh menggagalkan analisis heuristik.
+    claim_check: ClaimCheckResult | None = None
+    if use_ai_check:
+        claim_check = run_claim_verification(
+            text=content.raw_text,
+            title=content.title,
+            claims=[claim.text for claim in outcome.claims],
+        )
+        outcome.limitations = apply_claim_check_limitation(
+            outcome.limitations, claim_check.status
+        )
+
     processing_ms = int(
         (time.perf_counter() - (started_at or pipeline_started)) * 1000
     )
@@ -380,6 +449,7 @@ def _analyze_content(
             article_links=article_links,
             created_at=created_at,
             factcheck=factcheck,
+            claim_check=claim_check,
         )
 
     logger.info(
@@ -408,8 +478,22 @@ def create_analysis(
     started = time.perf_counter()
     article: ExtractedArticle | None = None
     meta: dict = {}
+    source_type = "url" if url else "text"
 
-    if url:
+    if url and detect_platform(url):
+        # Postingan media sosial diambil lewat UnifAPI karena halaman aslinya
+        # hampir selalu berupa login wall atau shell JavaScript.
+        post = fetch_social_post(url)
+        content_text = post.text
+        content_title = title or post.title
+        content_publisher = publisher or post.publisher
+        author = post.author
+        content_published_at = published_at or post.published_at
+        source_url = post.url
+        canonical_url = post.canonical_url
+        meta = post.meta
+        source_type = "social"
+    elif url:
         article = extract_article(url)
         content_text = article.text
         content_title = title or article.title
@@ -429,7 +513,7 @@ def create_analysis(
         canonical_url = None
 
     content = _get_or_create_content(
-        source_type="url" if url else "text",
+        source_type=source_type,
         text=content_text,
         title=content_title,
         url=source_url,
@@ -473,4 +557,28 @@ def analyze_text_local(
         reference_time=reference_time,
         created_at=published_at,
         use_factcheck=False,
+        use_ai_check=False,
     )
+
+
+def delete_analyses(analysis_ids: list[str]) -> int:
+    """Hapus analisis beserta turunannya dan bersihkan konten yang jadi yatim.
+
+    Konten yang masih dipakai analisis lain (mis. URL yang sama dianalisis ulang)
+    sengaja dipertahankan agar statistik dan tautan koordinasi tidak rusak.
+    Mengembalikan jumlah analisis yang terhapus.
+    """
+    if not analysis_ids:
+        return 0
+
+    with transaction.atomic():
+        queryset = Analysis.objects.filter(pk__in=analysis_ids)
+        content_ids = set(queryset.values_list("content_id", flat=True))
+        total = queryset.count()
+        queryset.delete()
+        if content_ids:
+            ContentItem.objects.filter(
+                pk__in=content_ids, analyses__isnull=True
+            ).delete()
+    return total
+

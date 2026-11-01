@@ -28,7 +28,16 @@ class SignalOutSerializer(serializers.ModelSerializer):
 class ClaimOutSerializer(serializers.ModelSerializer):
     class Meta:
         model = Claim
-        fields = ("id", "text", "verdict", "rationale")
+        fields = (
+            "id",
+            "text",
+            "verdict",
+            "rationale",
+            "evidence_status",
+            "verification_note",
+            "citations",
+            "verified_at",
+        )
         read_only_fields = fields
 
 
@@ -105,6 +114,7 @@ class AnalysisDetailSerializer(AnalysisListItemSerializer):
             "processing_ms",
             "limitations",
             "factcheck",
+            "claim_check",
             "content",
             "signals",
             "claims",

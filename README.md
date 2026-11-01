@@ -10,11 +10,17 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 ## Fitur yang sudah berjalan
 
 - **Ingest** URL artikel (Trafilatura + BeautifulSoup) atau teks manual.
+- **Ingest media sosial publik** — tautan TikTok, Instagram, Facebook, dan X/Twitter diambil
+  lewat UnifAPI: caption/teks, akun, waktu unggah, dan URL kanonis. Video/audio tidak ditranskripsi.
 - **Hoax & fact-checking signal** — atribusi sumber, sensasionalisme, tekanan menyebarkan,
   klaim numerik tanpa sumber, ekstraksi kandidat klaim.
 - **Pemeriksaan fakta eksternal** — Google Fact Check Tools API dicari untuk judul dan klaim
   utama, hasilnya disaring relevansinya, di-cache 7 hari, dan ditampilkan sebagai panel bukti
   pendukung (verdict heuristik tidak diubah).
+- **Verifikasi klaim berbasis AI (opsional)** — dua klaim utama dicari ke pencarian web terbuka
+  (Exa), lalu model bahasa menilai tiap klaim **hanya** dari cuplikan yang ditemukan. Hasilnya
+  status per klaim (`didukung` / `dibantah` / `tidak cukup bukti`) beserta sitasi; sitasi yang
+  tidak berasal dari hasil pencarian otomatis dibuang. Nonaktif bila kunci API kosong.
 - **Provocation analysis** — leksikon kekerasan, dehumanisasi, mobilisasi, polarisasi, pola
   ajakan eskalasi, normalisasi panjang dokumen.
 - **Coordinated activity analysis** — Jaccard similarity shingle 4-kata dalam jendela ±72 jam,
@@ -26,9 +32,6 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 - **Riwayat & detail analisis** — filter status, ringkasan, empat kartu sinyal, klaim, konten
   terkait, sumber/bukti, dan daftar batasan.
 - **Django admin** untuk inspeksi data (konten, analisis, sinyal, klaim, bukti, tautan).
-- **Seed data demo sintetis** (14 analisis) otomatis saat server dijalankan pada database kosong.
-
-> Semua contoh berita, instansi, dan peristiwa dalam data demo adalah fiktif.
 
 ## Stack
 
@@ -36,11 +39,12 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 | --- | --- |
 | Backend | Python 3.12+ (diuji 3.13), Django 5.2 LTS, Django REST Framework 3.16 |
 | Ekstraksi | httpx, BeautifulSoup4, Trafilatura |
+| Media sosial | UnifAPI (TikTok, Instagram, Facebook, X/Twitter) |
 | Database | SQLite untuk MVP; siap dipindah ke PostgreSQL |
 | Admin/auth | Django admin, session auth (endpoint analisis terbuka untuk demo) |
 | Frontend | React 18, TypeScript, Vite 6, Tailwind CSS, Lucide, Recharts, React Router, TanStack Query |
 | Form & validasi | React Hook Form + Zod |
-| Pengujian | Django TestCase + DRF APITestCase (23 tes) |
+| Pengujian | Django TestCase + DRF APITestCase (68 tes) |
 
 ## Struktur proyek
 
@@ -56,8 +60,8 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 │   │   ├── urls.py
 │   │   ├── admin.py
 │   │   ├── analysis/              # mesin heuristik framework-agnostic
-│   │   ├── services/              # analisis, ekstraksi, dashboard, seed, build frontend
-│   │   ├── management/commands/   # runserver, seed_demo, build_frontend
+│   │   ├── services/              # analisis, ekstraksi, dashboard, build frontend
+│   │   ├── management/commands/   # runserver, build_frontend
 │   │   ├── migrations/
 │   │   └── tests/
 │   ├── requirements.txt
@@ -95,9 +99,11 @@ cd backend
 Perintah ini otomatis:
 
 1. menjalankan migrasi database,
-2. mengisi 14 analisis demo bila database masih kosong,
-3. membangun frontend React bila `frontend/dist` belum tersedia,
-4. menjalankan server di <http://127.0.0.1:8000>.
+2. membangun frontend React bila `frontend/dist` belum tersedia,
+3. menjalankan server di <http://127.0.0.1:8000>.
+
+Database dimulai kosong: aplikasi tidak lagi menyuntikkan data contoh, sehingga seluruh isi
+riwayat berasal dari konten yang Anda analisis sendiri.
 
 Alamat penting:
 
@@ -137,10 +143,9 @@ lalu refresh <http://127.0.0.1:8000>.
 
 ```bash
 python manage.py migrate              # terapkan migrasi
-python manage.py seed_demo            # isi data demo bila kosong
 python manage.py build_frontend       # build React ke frontend/dist
 python manage.py createsuperuser      # akun admin
-python manage.py test                 # 23 tes
+python manage.py test                 # 68 tes
 ```
 
 ## Konfigurasi backend
@@ -165,14 +170,23 @@ python manage.py test                 # 23 tes
 | `FACTCHECK_CACHE_TTL_HOURS` | `168` | Umur cache respons di tabel `factcheck_queries` |
 | `FACTCHECK_MIN_OVERLAP` | `0.45` | Ambang porsi kata klaim yang harus muncul di konten |
 | `FACTCHECK_LANGUAGE_CODE` | kosong | Batasi bahasa ulasan (`id`); kosong = semua bahasa |
-| `LLM_ENABLED`, `LLM_API_KEY`, `LLM_MODEL` | `false` | Placeholder integrasi LLM (belum aktif) |
+| `AI_CLAIM_CHECK_ENABLED` | `true` | Verifikasi klaim berbasis AI; nonaktif otomatis saat `manage.py test` |
+| `EXA_API_KEY` | — | Kunci pencarian web Exa; verifikasi klaim nonaktif bila kosong |
+| `EXA_RESULTS_PER_CLAIM` | `3` | Jumlah sumber yang diambil per klaim |
+| `CLAIM_CHECK_MAX_CLAIMS` | `2` | Klaim yang diverifikasi per analisis (hemat kuota) |
+| `LLM_ENABLED` | `false` | Wajib `true` agar verifikasi klaim berjalan |
+| `LLM_API_KEY`, `LLM_MODEL` | — | Kunci dan nama model bahasa |
+| `LLM_BASE_URL` | `https://api.groq.com/openai/v1` | Endpoint kompatibel OpenAI (Groq, Gemini, OpenRouter, Ollama) |
+| `UNIFAPI_API_KEY` | — | Kunci UnifAPI untuk ingest TikTok/Instagram/Facebook/X; tanpa kunci, URL media sosial ditolak dengan pesan agar teks ditempel manual |
+| `UNIFAPI_BASE_URL` | `https://api.unifapi.com` | Endpoint UnifAPI |
+| `SOCIAL_FETCH_TIMEOUT_SECONDS` | `15` | Timeout pengambilan satu postingan media sosial |
 
 ### Pindah ke PostgreSQL
 
 1. Pasang driver: `pip install "psycopg[binary]"` (belum masuk requirements default).
 2. Buat database lewat pgAdmin atau `createdb kartika_intel`.
 3. Set `DATABASE_URL=postgresql://satria:satria@localhost:5432/kartika_intel` di `.env`.
-4. Jalankan `python manage.py migrate`, lalu `python manage.py seed_demo` bila ingin data demo.
+4. Jalankan `python manage.py migrate`.
 
 Django tetap memakai `manage.py`; tidak ada Alembic/SQLAlchemy pada versi ini.
 
@@ -180,15 +194,20 @@ Django tetap memakai `manage.py`; tidak ada Alembic/SQLAlchemy pada versi ini.
 
 | Metode | Path | Keterangan |
 | --- | --- | --- |
-| `POST` | `/api/v1/analyses` | Analisis `{ "url": ... }` atau `{ "text": ..., "title"?, "publisher"? }` |
+| `POST` | `/api/v1/analyses` | Analisis `{ "url": ... }` (artikel atau postingan TikTok/Instagram/Facebook/X) atau `{ "text": ..., "title"?, "publisher"? }` |
 | `GET` | `/api/v1/analyses` | Riwayat; filter `verdict`, `category`; `limit` (1–100), `offset` |
 | `GET` | `/api/v1/analyses/{id}` | Detail sinyal, klaim, bukti, konten terkait |
+| `DELETE` | `/api/v1/analyses/{id}` | Hapus satu analisis beserta sinyal, klaim, bukti, dan tautan koordinasinya |
+| `POST` | `/api/v1/analyses/bulk-delete` | Hapus beberapa analisis sekaligus `{ "ids": [...] }` (maks 200) |
 | `GET` | `/api/v1/dashboard/summary` | Agregasi dashboard 14 hari |
 | `GET` | `/health` | Status layanan |
 
 Status error: `400` validasi input, `422` URL tidak aman atau isi hasil ekstraksi terlalu pendek,
 `404` data tidak ditemukan, `502` sumber gagal diambil. Semua error memakai bentuk
 `{"detail": "..."}` agar mudah ditampilkan frontend.
+
+Penghapusan bersifat permanen. `ContentItem` ikut dihapus hanya bila tidak lagi dipakai analisis
+lain, sehingga URL yang pernah dianalisis berulang tetap menyimpan kontennya.
 
 Contoh:
 
@@ -230,21 +249,28 @@ Detail metode dan batasan tersedia di halaman **Metodologi** pada aplikasi.
 
 - Pemeriksaan fakta eksternal hanya mencakup klaim yang sudah diperiksa pihak lain; konten baru
   tidak akan punya catatan, dan ketiadaan catatan bukan bukti kebenaran.
+- Status klaim berbasis AI adalah pembacaan model terhadap cuplikan sumber, bukan putusan fakta.
+  Tanpa sitasi yang valid statusnya diturunkan menjadi “tidak cukup bukti”, dan setiap sitasi
+  tetap wajib dibuka analis.
+- Ingest media sosial hanya membaca postingan **publik** dan hanya caption/teksnya; video dan audio
+  tidak ditranskripsi, dan kegagalan penyedia mengembalikan `422`/`502` tanpa analisis parsial.
+- Ingest media sosial menambah biaya per record di UnifAPI dan tidak menelusuri akun lain yang
+  menyebarkan konten yang sama; tautan pendek di luar domain platform harus dibuka dulu.
 - Sinyal bot/AI hanya berbasis teks karena metadata akun belum tersedia.
 - Leksikon dapat melewatkan sarkasme, kutipan berita, atau konteks budaya.
 - Kemiripan teks bukan bukti aktor yang sama (bisa karena sindikasi berita).
 - Endpoint analisis sengaja terbuka untuk demo; gunakan autentikasi/token sebelum produksi.
 - Keputusan akhir selalu berada pada analis manusia.
 
-## Reset data demo
+## Reset database
 
 Hentikan server, hapus `backend/kartika_intel.db`, lalu jalankan `manage.py runserver` lagi.
-Migrasi dan seed akan berjalan otomatis.
+Migrasi berjalan otomatis dan database dimulai kosong tanpa data contoh.
 
 ## Langkah berikutnya
 
-1. Integrasi LLM untuk ringkasan klaim, penalaran verdict, dan sitasi bukti (`model_used` sudah
-   tersedia di model).
+1. Pakai LLM juga untuk ringkasan naratif dan penalaran verdict (saat ini AI hanya memberi status
+   per klaim; verdict tetap heuristik).
 2. Proteksi API dengan token/session auth dan peran analis/supervisor.
 3. Impor batch CSV/JSON untuk metadata akun dan waktu unggah.
 4. Integrasi MAFINDO/Yudistira API sebagai sumber pemeriksaan fakta lokal, di samping Google.

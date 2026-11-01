@@ -27,15 +27,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <Link to="/" onClick={onNavigate} className="flex items-center gap-3 px-2">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-cyan-400/30 bg-white/95">
+        <span className="flex h-11 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-cyan-400/20 bg-ink-950">
           <img
-            src="/kartika.jpg"
-            alt="Logo Kartika Cyber Hackathon 2026"
-            className="h-full w-full object-contain"
+            src="/Cynteltika.jpeg"
+            alt="Logo Cynteltika"
+            className="h-full w-full object-cover"
           />
         </span>
         <span>
-          <span className="block text-sm font-semibold tracking-[0.22em] text-white">KARTIKA</span>
+          <span className="block text-sm font-semibold tracking-[0.22em] text-white">CYNELTIKA</span>
           <span className="block text-[10px] font-medium uppercase tracking-[0.3em] text-cyan-400/80">
             Intel
           </span>
@@ -116,11 +116,11 @@ export default function Layout() {
         </button>
         <div className="flex items-center gap-2">
           <img
-            src="/kartika.jpg"
-            alt="Logo Kartika Cyber Hackathon 2026"
-            className="h-7 w-7 rounded-md object-contain"
+            src="/Cynteltika.jpeg"
+            alt="Logo Cynteltika"
+            className="h-7 w-[50px] rounded-md object-cover"
           />
-          <span className="text-sm font-semibold tracking-[0.2em] text-white">KARTIKA INTEL</span>
+          <span className="text-sm font-semibold tracking-[0.2em] text-white">CYNELTIKA</span>
         </div>
         <div className="w-8" />
       </header>
@@ -153,12 +153,6 @@ export default function Layout() {
             Digital Information Threat Intelligence ·{" "}
             <span className="text-slate-400">{today}</span>
           </p>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-400/5 px-2.5 py-1 text-[11px] font-medium text-amber-300/90">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              Data demo sintetis
-            </span>
-          </div>
         </div>
         <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <Outlet />

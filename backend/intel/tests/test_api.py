@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from django.contrib.auth import get_user_model
-from django.core.management import call_command
-from django.test import TestCase
 from rest_framework.test import APITestCase
 
-from intel.models import Analysis, CoordinationLink
-from intel.services.seed_service import seed_demo_data
+from intel.models import Analysis, ContentItem, CoordinationLink
 
 SAMPLE_TEXT = (
     "Bantuan sosial Rp 5 juta untuk semua warga bisa diambil lewat link berikut. "
@@ -87,6 +86,87 @@ class ApiTests(APITestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["detail"], "Analisis tidak ditemukan.")
 
+    def test_delete_analysis_removes_history(self) -> None:
+        created = self.client.post(
+            "/api/v1/analyses", {"text": SAMPLE_TEXT, "title": "Bansos"}, format="json"
+        ).json()
+
+        response = self.client.delete(f"/api/v1/analyses/{created['id']}")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(Analysis.objects.count(), 0)
+        self.assertEqual(ContentItem.objects.count(), 0)
+
+        detail = self.client.get(f"/api/v1/analyses/{created['id']}")
+        self.assertEqual(detail.status_code, 404)
+
+    def test_delete_analysis_keeps_shared_content(self) -> None:
+        first = self.client.post(
+            "/api/v1/analyses", {"text": SAMPLE_TEXT, "title": "Bansos A"}, format="json"
+        ).json()
+        second = self.client.post(
+            "/api/v1/analyses", {"text": SAMPLE_TEXT, "title": "Bansos B"}, format="json"
+        ).json()
+        self.assertEqual(ContentItem.objects.count(), 1)
+
+        response = self.client.delete(f"/api/v1/analyses/{first['id']}")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(Analysis.objects.count(), 1)
+        self.assertTrue(Analysis.objects.filter(pk=second["id"]).exists())
+        self.assertEqual(ContentItem.objects.count(), 1)
+
+    def test_delete_analysis_cascades_coordination_links(self) -> None:
+        self.client.post(
+            "/api/v1/analyses", {"text": SAMPLE_TEXT, "title": "Pesan A"}, format="json"
+        )
+        second = self.client.post(
+            "/api/v1/analyses",
+            {"text": NEAR_DUPLICATE_TEXT, "title": "Pesan B"},
+            format="json",
+        ).json()
+        self.assertEqual(CoordinationLink.objects.count(), 2)
+
+        response = self.client.delete(f"/api/v1/analyses/{second['id']}")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(CoordinationLink.objects.count(), 0)
+        self.assertEqual(Analysis.objects.count(), 1)
+
+    def test_delete_unknown_analysis_is_404(self) -> None:
+        self.assertEqual(
+            self.client.delete(f"/api/v1/analyses/{uuid4()}").status_code, 404
+        )
+        self.assertEqual(
+            self.client.delete("/api/v1/analyses/tidak-ada").status_code, 404
+        )
+
+    def test_bulk_delete_analyses(self) -> None:
+        first = self.client.post(
+            "/api/v1/analyses", {"text": SAMPLE_TEXT, "title": "Bansos"}, format="json"
+        ).json()
+        second = self.client.post(
+            "/api/v1/analyses",
+            {"text": NEAR_DUPLICATE_TEXT, "title": "Bansos mirip"},
+            format="json",
+        ).json()
+
+        response = self.client.post(
+            "/api/v1/analyses/bulk-delete",
+            {"ids": [first["id"], second["id"]]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deleted"], 2)
+        self.assertEqual(Analysis.objects.count(), 0)
+        self.assertEqual(ContentItem.objects.count(), 0)
+        self.assertEqual(CoordinationLink.objects.count(), 0)
+
+    def test_bulk_delete_validates_payload(self) -> None:
+        for payload in ({}, {"ids": []}, {"ids": "bukan-daftar"}, {"ids": ["bukan-uuid"]}):
+            response = self.client.post(
+                "/api/v1/analyses/bulk-delete", payload, format="json"
+            )
+            self.assertEqual(response.status_code, 400, payload)
+            self.assertIsInstance(response.json()["detail"], str)
+
     def test_duplicate_analysis_creates_coordination_links(self) -> None:
         first = self.client.post(
             "/api/v1/analyses", {"text": SAMPLE_TEXT, "title": "Pesan A"}, format="json"
@@ -159,10 +239,3 @@ class ApiTests(APITestCase):
         listing = self.client.get("/admin/intel/analysis/")
         self.assertEqual(listing.status_code, 200)
 
-
-class SeedCommandTests(TestCase):
-    def test_seed_demo_is_idempotent(self) -> None:
-        call_command("seed_demo", verbosity=0)
-        self.assertEqual(Analysis.objects.count(), 14)
-        self.assertEqual(seed_demo_data(), 0)
-        self.assertEqual(Analysis.objects.count(), 14)
