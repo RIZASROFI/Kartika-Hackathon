@@ -168,10 +168,6 @@ FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 FETCH_TIMEOUT_SECONDS = env_float("FETCH_TIMEOUT_SECONDS", 15.0)
 MAX_CONTENT_CHARS = env_int("MAX_CONTENT_CHARS", 60_000)
 
-COORDINATION_SIMILARITY_THRESHOLD = env_float("COORDINATION_SIMILARITY_THRESHOLD", 0.28)
-COORDINATION_WINDOW_HOURS = env_int("COORDINATION_WINDOW_HOURS", 72)
-COORDINATION_MIN_CORPUS = env_int("COORDINATION_MIN_CORPUS", 3)
-
 # --- Pemeriksaan fakta eksternal (Google Fact Check Tools API) ---
 # Nonaktif otomatis saat pengujian agar suite tidak memanggil jaringan.
 RUNNING_TESTS = "test" in sys.argv or "pytest" in sys.modules
@@ -188,6 +184,22 @@ FACTCHECK_CACHE_TTL_HOURS = env_int("FACTCHECK_CACHE_TTL_HOURS", 168)
 FACTCHECK_MIN_OVERLAP = env_float("FACTCHECK_MIN_OVERLAP", 0.45)
 FACTCHECK_LANGUAGE_CODE = os.getenv("FACTCHECK_LANGUAGE_CODE", "").strip()
 
+# --- Pemeriksaan fakta MAFINDO / Yudistira Public API v2 ---
+# Endpoint: POST {base}/antihoax/search dengan API key di body form.
+# Nonaktif otomatis saat pengujian agar suite tidak memanggil jaringan.
+MAFINDO_API_KEY = os.getenv("MAFINDO_API_KEY", "").strip()
+MAFINDO_ENABLED = (
+    env_bool("MAFINDO_ENABLED", True)
+    and bool(MAFINDO_API_KEY)
+    and not RUNNING_TESTS
+)
+MAFINDO_BASE_URL = (
+    os.getenv("MAFINDO_BASE_URL") or "https://yudistira.turnbackhoax.id/api"
+).rstrip("/")
+MAFINDO_TIMEOUT_SECONDS = env_float("MAFINDO_TIMEOUT_SECONDS", 8.0)
+MAFINDO_PAGE_SIZE = env_int("MAFINDO_PAGE_SIZE", 5)
+MAFINDO_MAX_QUERIES = env_int("MAFINDO_MAX_QUERIES", 2)
+
 # --- Verifikasi klaim berbasis AI (pencarian web Exa + model bahasa) ---
 # Nonaktif otomatis saat pengujian agar suite tidak memanggil jaringan.
 AI_CLAIM_CHECK_ENABLED = env_bool("AI_CLAIM_CHECK_ENABLED", True) and not RUNNING_TESTS
@@ -200,6 +212,10 @@ EXA_SNIPPET_CHARS = env_int("EXA_SNIPPET_CHARS", 600)
 CLAIM_CHECK_MAX_CLAIMS = env_int("CLAIM_CHECK_MAX_CLAIMS", 2)
 CLAIM_CHECK_MAX_CITATIONS = env_int("CLAIM_CHECK_MAX_CITATIONS", 3)
 
+# Pencocokan kesetaraan klaim cek fakta memakai model bahasa. Nonaktif otomatis
+# saat pengujian agar suite tidak memanggil jaringan.
+CLAIM_MATCH_ENABLED = env_bool("CLAIM_MATCH_ENABLED", True) and not RUNNING_TESTS
+
 LLM_ENABLED = env_bool("LLM_ENABLED", False)
 LLM_API_KEY = os.getenv("LLM_API_KEY") or None
 LLM_MODEL = os.getenv("LLM_MODEL") or None
@@ -208,12 +224,18 @@ LLM_BASE_URL = (os.getenv("LLM_BASE_URL") or "https://api.groq.com/openai/v1").r
 LLM_TIMEOUT_SECONDS = env_float("LLM_TIMEOUT_SECONDS", 20.0)
 LLM_MAX_TOKENS = env_int("LLM_MAX_TOKENS", 2048)
 
-# --- Ingest postingan media sosial publik (UnifAPI) ---
-# Nonaktif secara efektif bila kunci kosong: URL media sosial akan ditolak
-# dengan pesan yang meminta teks ditempel manual.
-UNIFAPI_API_KEY = os.getenv("UNIFAPI_API_KEY", "").strip()
-UNIFAPI_BASE_URL = (os.getenv("UNIFAPI_BASE_URL") or "https://api.unifapi.com").rstrip("/")
-SOCIAL_FETCH_TIMEOUT_SECONDS = env_float("SOCIAL_FETCH_TIMEOUT_SECONDS", 15.0)
+# --- Sinyal model IndoBERT lokal (opsional) ---
+# Nonaktif otomatis saat pengujian agar suite tidak memuat bobot 476 MB.
+# Sinyal ini hanya pembanding: verdict tetap ditentukan mesin heuristik.
+# Bila folder model tidak ada, sinyal dilewati tanpa mengganggu analisis.
+INDOBERT_ENABLED = env_bool("INDOBERT_ENABLED", True) and not RUNNING_TESTS
+INDOBERT_MODEL_DIR = Path(
+    os.getenv("INDOBERT_MODEL_DIR") or (BASE_DIR / "models" / "cynteltika_indobert_v1")
+)
+# 512 token menutup ~350 kata pertama; teks panjang diproses per jendela.
+INDOBERT_MAX_TOKENS = env_int("INDOBERT_MAX_TOKENS", 512)
+INDOBERT_MAX_CHUNKS = env_int("INDOBERT_MAX_CHUNKS", 4)
+INDOBERT_BATCH_SIZE = env_int("INDOBERT_BATCH_SIZE", 4)
 
 LOGGING = {
     "version": 1,

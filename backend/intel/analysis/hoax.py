@@ -10,13 +10,16 @@ import re
 
 from intel.analysis.lexicons import (
     ABSOLUTE_TERMS,
-    ATTRIBUTION_TERMS,
     HEDGE_TERMS,
     OFFICIAL_SOURCE_PATTERN,
     SENSATIONAL_TERMS,
+    TRACEABLE_ATTRIBUTION_TERMS,
     URGENCY_TERMS,
+    VAGUE_ATTRIBUTION_TERMS,
 )
 from intel.analysis.text_stats import (
+    VERDICT_HOAX_THRESHOLD,
+    VERDICT_VERIFY_THRESHOLD,
     ClaimResult,
     SignalResult,
     count_hits,
@@ -26,7 +29,9 @@ from intel.analysis.text_stats import (
 )
 
 NUMERIC_CLAIM_RE = re.compile(
-    r"\b\d{1,3}(?:[.,]\d+)?\s?(%|persen|juta|miliar|triliun|ribu|orang|hari|tahun)\b",
+    # Penutup memakai (?!\w), bukan \b: "%" bukan karakter kata sehingga \b
+    # membuat "100%" tidak pernah cocok.
+    r"\b\d{1,3}(?:[.,]\d+)?\s?(%|persen|juta|miliar|triliun|ribu|orang|hari|tahun)(?!\w)",
     re.IGNORECASE,
 )
 
@@ -36,67 +41,82 @@ def analyze_hoax(text: str, title: str | None = None) -> tuple[SignalResult, lis
     word_total = max(1, len(words(corpus)))
     lowered = corpus.lower()
 
-    attribution_hits, attribution_matched = count_hits(lowered, ATTRIBUTION_TERMS)
+    traceable_hits, traceable_matched = count_hits(lowered, TRACEABLE_ATTRIBUTION_TERMS)
+    vague_hits, vague_matched = count_hits(lowered, VAGUE_ATTRIBUTION_TERMS)
+    hedge_hits, hedge_matched = count_hits(lowered, HEDGE_TERMS)
     official_hits = len(re.findall(OFFICIAL_SOURCE_PATTERN, lowered))
     sensational_hits, sensational_matched = count_hits(lowered, SENSATIONAL_TERMS)
     urgency_hits, urgency_matched = count_hits(lowered, URGENCY_TERMS)
-    hedge_hits, hedge_matched = count_hits(lowered, HEDGE_TERMS)
     absolute_hits, absolute_matched = count_hits(lowered, ABSOLUTE_TERMS)
     numeric_hits = len(NUMERIC_CLAIM_RE.findall(corpus))
 
     score = 0.0
     details: list[str] = []
 
-    if attribution_hits == 0 and word_total >= 40:
-        score += 22
-        details.append("Tidak ditemukan atribusi sumber (menurut/dilansir/pernyataan resmi).")
-    elif attribution_hits:
-        details.append("Atribusi disebutkan: " + ", ".join(attribution_matched[:4]) + ".")
+    # Atribusi dinilai dari sumber yang bisa dilacak, bukan dari kata "menurut"
+    # yang juga dipakai hoax untuk berpura-pura memiliki sumber.
+    if traceable_hits == 0:
+        score += 20
+        details.append(
+            "Tidak ditemukan atribusi yang dapat ditelusuri (dilansir/pernyataan resmi/juru bicara)."
+        )
+    else:
+        details.append(
+            "Atribusi dapat ditelusuri: " + ", ".join(traceable_matched[:4]) + "."
+        )
 
-    if official_hits == 0 and (numeric_hits or sensational_hits):
-        score += 12
-        details.append("Tidak ada rujukan ke lembaga/sumber resmi yang dapat ditelusuri.")
+    if hedge_hits:
+        score += min(27, hedge_hits * 9)
+        details.append("Klaim bersandar pada sumber kabur: " + ", ".join(hedge_matched[:5]) + ".")
 
     if sensational_hits:
         score += min(18, sensational_hits * 6)
         details.append("Bahasa sensasional: " + ", ".join(sensational_matched[:5]) + ".")
 
     if urgency_hits:
-        score += min(22, urgency_hits * 8)
+        score += min(24, urgency_hits * 8)
         details.append("Dorongan menyebarkan segera: " + ", ".join(urgency_matched[:5]) + ".")
-
-    if hedge_hits:
-        score += min(18, hedge_hits * 7)
-        details.append("Klaim berbasis sumber kabur: " + ", ".join(hedge_matched[:5]) + ".")
 
     if absolute_hits:
         score += min(10, absolute_hits * 4)
         details.append("Pernyataan absolut: " + ", ".join(absolute_matched[:5]) + ".")
 
-    if numeric_hits and attribution_hits == 0:
+    if numeric_hits and traceable_hits == 0:
         score += 12
-        details.append(f"Memuat {numeric_hits} angka/statistik tanpa atribusi.")
+        details.append(
+            f"Memuat {numeric_hits} angka/statistik tanpa atribusi yang dapat ditelusuri."
+        )
 
-    # Pengurang: teks yang secara eksplisit mengutip banyak sumber cenderung lebih sehat.
-    if attribution_hits >= 2:
+    if official_hits == 0 and (sensational_hits or urgency_hits or hedge_hits or numeric_hits):
+        score += 10
+        details.append("Tidak ada rujukan ke lembaga/sumber resmi yang dapat ditelusuri.")
+    elif official_hits and traceable_hits == 0 and hedge_hits:
+        # Pola otoritas semu: nama lembaga dipakai, tetapi tanpa pernyataan resmi.
+        score += 10
+        details.append(
+            "Menyebut lembaga resmi tanpa pernyataan/kutipan resmi (pola otoritas semu)."
+        )
+
+    # Pengurang: hanya atribusi yang dapat ditelusuri yang menurunkan skor.
+    if traceable_hits >= 2:
         score -= 12
-        details.append("Beberapa atribusi sumber ditemukan (mengurangi skor).")
-    if official_hits >= 1:
+        details.append("Beberapa atribusi dapat ditelusuri (mengurangi skor).")
+    if official_hits >= 1 and not hedge_hits:
         score -= 8
-        details.append("Menyebut lembaga resmi (mengurangi skor).")
-
-    if not details:
-        details.append("Tidak ada penanda kelemahan informasi yang menonjol.")
+        details.append("Menyebut lembaga resmi tanpa klaim bersumber kabur (mengurangi skor).")
+    if vague_hits >= 2 and traceable_hits >= 1:
+        score -= 6
+        details.append("Atribusi dominan masih umum (mengurangi skor).")
 
     score = max(0.0, min(95.0, score))
 
-    if score >= 60:
+    if score >= VERDICT_HOAX_THRESHOLD:
         explanation = (
             "Konten menunjukkan beberapa kelemahan informasi sekaligus: atribusi tidak jelas, "
             "tekanan menyebarkan, dan/atau klaim numerik tanpa sumber. Status: terindikasi "
             "hoax secara indikatif, bukan putusan fakta."
         )
-    elif score >= 35:
+    elif score >= VERDICT_VERIFY_THRESHOLD:
         explanation = (
             "Sebagian klaim belum didukung sumber yang dapat ditelusuri. Konten masuk kategori "
             "perlu verifikasi sebelum dipercaya atau dibagikan."
@@ -109,7 +129,7 @@ def analyze_hoax(text: str, title: str | None = None) -> tuple[SignalResult, lis
 
     confidence = 0.4
     confidence += 0.15 if word_total >= 150 else 0.05
-    confidence += 0.1 if attribution_hits or official_hits else 0.0
+    confidence += 0.1 if traceable_hits or official_hits else 0.0
     confidence += 0.1 if (sensational_hits + urgency_hits) >= 2 else 0.0
 
     signal = make_signal(

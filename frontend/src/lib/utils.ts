@@ -59,16 +59,6 @@ export function formatPercent(value: number, digits = 0): string {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
-export function hoursLabel(hours: number | null): string {
-  if (hours === null || Number.isNaN(hours)) {
-    return "waktu tidak diketahui";
-  }
-  if (hours < 1) {
-    return `${Math.round(hours * 60)} menit`;
-  }
-  return `${hours.toFixed(1)} jam`;
-}
-
 export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }

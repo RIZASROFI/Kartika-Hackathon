@@ -7,7 +7,6 @@ from intel.models import (
     AnalysisSignal,
     Claim,
     ContentItem,
-    CoordinationLink,
     Evidence,
     FactCheckQuery,
 )
@@ -107,32 +106,6 @@ class AnalysisAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(CoordinationLink)
-class CoordinationLinkAdmin(admin.ModelAdmin):
-    list_display = (
-        "id",
-        "analysis",
-        "related_analysis",
-        "similarity",
-        "hours_apart",
-        "created_at",
-    )
-    search_fields = ("analysis__id", "related_analysis__id")
-    list_filter = ("created_at",)
-    readonly_fields = (
-        "id",
-        "analysis",
-        "related_analysis",
-        "similarity",
-        "hours_apart",
-        "shared_phrases",
-        "created_at",
-    )
-
-    def has_add_permission(self, request):
-        return False
-
-
 @admin.register(FactCheckQuery)
 class FactCheckQueryAdmin(admin.ModelAdmin):
     list_display = ("query_text", "provider", "hit_count", "created_at", "expires_at")
@@ -153,5 +126,5 @@ class FactCheckQueryAdmin(admin.ModelAdmin):
         return False
 
 
-# Signal, klaim, bukti, dan tautan dikelola otomatis oleh mesin analisis,
+# Signal, klaim, dan bukti dikelola otomatis oleh mesin analisis,
 # jadi tidak didaftarkan sebagai menu admin terpisah.

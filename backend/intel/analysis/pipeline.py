@@ -1,28 +1,48 @@
-"""Orkestrasi mesin analisis KARTIKA Intel."""
+"""Orkestrasi mesin analisis KARTIKA Intel.
+
+Tiga tahap dipisah tegas:
+
+1. **Analisis narasi** (modul ini): sinyal heuristik dan IndoBERT menghasilkan
+   risk score — pola atribusi, sensasionalisme, dan penyebaran. Tahap ini
+   *tidak* menetapkan benar/salah.
+2. **Verifikasi fakta** (`services/factcheck.py`, `services/claim_verification.py`):
+   MAFINDO, Google Fact Check, Exa, dan model bahasa mengumpulkan bukti.
+3. **Keputusan** (`analysis/ebde.py`): Evidence-Based Decision Engine menilai
+   bukti dan menetapkan verdict faktual, terpisah dari risk score.
+
+Karena verdict baru ada setelah bukti terkumpul, `run_analysis` mengembalikan
+status sementara "Belum Dapat Dinilai" yang akan diganti
+`ebde.apply_decision` / `analysis_service`.
+"""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Sequence
 
-from intel.analysis.bot import analyze_bot_signals
-from intel.analysis.coordination import (
-    CoordinationCandidate,
-    CoordinationMatch,
-    analyze_coordination,
+from intel.analysis import indobert
+from intel.analysis.ebde import (
+    DECISION_LIMITATION,
+    FACTUAL_VERDICT_LABELS,
+    LEGACY_VERDICT_LABELS,
+    VERDICT_BELUM_DAPAT_DINILAI,
 )
 from intel.analysis.hoax import analyze_hoax
-from intel.analysis.provocation import analyze_provocation
-from intel.analysis.text_stats import ClaimResult, SignalResult, risk_level, word_count
+from intel.analysis.text_stats import (
+    VERDICT_HOAX_THRESHOLD,
+    VERDICT_VERIFY_THRESHOLD,
+    ClaimResult,
+    SignalResult,
+    risk_level,
+    word_count,
+)
 
-ENGINE_VERSION = "heuristic-1.0"
-SIGNAL_WEIGHTS = {
-    "hoax": 0.35,
-    "provocation": 0.30,
-    "coordination": 0.20,
-    "bot_ai": 0.15,
-}
+logger = logging.getLogger(__name__)
+
+# 2.0: verdict dipindahkan dari heuristik ke Evidence-Based Decision Engine.
+ENGINE_VERSION = "ebde-2.0"
+
+VERDICT_LABELS = {**FACTUAL_VERDICT_LABELS, **LEGACY_VERDICT_LABELS}
 
 FACTCHECK_LIMITATION = {
     "off": (
@@ -43,17 +63,22 @@ FACTCHECK_LIMITATION = {
     ),
 }
 
-VERDICT_LABELS = {
-    "terkoordinasi": "Indikasi aktivitas terkoordinasi",
-    "terindikasi_menyesatkan": "Terindikasi Hoax",
-    "provokatif": "Provokatif",
-    "perlu_verifikasi": "Perlu verifikasi",
-    "risiko_rendah": "Terindikasi Fakta",
-}
+MODEL_LIMITATION = (
+    "Sinyal model IndoBERT dilatih pada korpus terbatas (TurnBackHoax sebagai kelas hoax, "
+    "Tempo/CNN/Kompas sebagai kelas fakta) sehingga skornya peka terhadap gaya penulisan; "
+    "sinyal ini tidak dipakai sebagai bukti kebenaran isi."
+)
+
+NARRATIVE_LIMITATION = (
+    "Sinyal heuristik dan IndoBERT mengukur pola narasi (atribusi, sensasionalisme, gaya "
+    "penulisan), bukan kebenaran isi; keduanya tidak menjadi bukti dalam keputusan akhir."
+)
 
 
 @dataclass
 class Assessment:
+    """Penilaian narasi. `verdict` di sini bersifat indikatif dan tidak final."""
+
     verdict: str
     risk_score: int
     risk_level: str
@@ -66,197 +91,129 @@ class Assessment:
 class AnalysisOutcome:
     signals: list[SignalResult]
     claims: list[ClaimResult]
-    matches: list[CoordinationMatch]
     verdict: str
     risk_score: int
     risk_level: str
     confidence: float
     summary: str
     limitations: list[str] = field(default_factory=list)
-    corpus_size: int = 0
+    model_used: str | None = None
+    narrative_verdict: str | None = None
+    decision: object | None = None
 
 
-def _risk_score(signals: dict[str, SignalResult]) -> float:
-    """Sinyal terkuat mendominasi, rata-rata berbobot memberi konteks."""
-    total_weight = 0.0
-    weighted_average = 0.0
-    for category, weight in SIGNAL_WEIGHTS.items():
-        signal = signals.get(category)
-        if signal is None:
-            continue
-        weighted_average += signal.score * weight
-        total_weight += weight
-    weighted_average = weighted_average / total_weight if total_weight else 0.0
-    strongest = max(signal.score for signal in signals.values())
-    return strongest * 0.65 + weighted_average * 0.35
-
-
-def _decide_verdict(
-    signals: dict[str, SignalResult], matches: list[CoordinationMatch], risk_score: int
-) -> str:
-    hoax = signals["hoax"].score
-    provocation = signals["provocation"].score
-    coordination = signals["coordination"].score
-
-    if len(matches) >= 2 and coordination >= 60:
-        return "terkoordinasi"
-    if hoax >= 60:
+def _decide_narrative_verdict(hoax_score: int) -> str:
+    if hoax_score >= VERDICT_HOAX_THRESHOLD:
         return "terindikasi_menyesatkan"
-    if provocation >= 60:
-        return "provokatif"
-    if hoax >= 35 or provocation >= 35 or coordination >= 50 or risk_score >= 25:
+    if hoax_score >= VERDICT_VERIFY_THRESHOLD:
         return "perlu_verifikasi"
     return "risiko_rendah"
 
 
-def _build_summary(
+def _build_narrative_summary(
     *,
-    verdict: str,
     risk_score: int,
     level: str,
-    signals: dict[str, SignalResult],
-    matches: list[CoordinationMatch],
-    corpus_size: int,
+    signal: SignalResult,
 ) -> str:
-    ordered = sorted(signals.values(), key=lambda signal: signal.score, reverse=True)
-    primary = ordered[0]
-    secondary = ordered[1]
-
-    parts = [
-        f"Skor risiko {risk_score}/100 ({level}). Status: {VERDICT_LABELS.get(verdict, verdict)}.",
-        f"Sinyal tertinggi adalah {primary.title} ({primary.score}/100, {primary.level}), "
-        f"diikuti {secondary.title} ({secondary.score}/100, {secondary.level}).",
-    ]
-
-    if matches:
-        parts.append(
-            f"Terdapat {len(matches)} konten dengan kemiripan narasi tinggi dalam jendela waktu, "
-            "mengindikasikan amplifikasi pesan yang sama."
-        )
-    elif corpus_size:
-        parts.append(
-            "Tidak ada konten pembanding dengan kemiripan signifikan pada korpus saat ini."
-        )
-
-    if verdict == "terindikasi_menyesatkan":
-        parts.append(
-            "Kelemahan atribusi dan tekanan untuk menyebarkan membuat klaim perlu ditahan sebelum "
-            "diviralkan. Cocokkan dengan sumber resmi terlebih dahulu."
-        )
-    elif verdict == "provokatif":
-        parts.append(
-            "Bahasa berpotensi memicu eskalasi. Rekomendasi: tunda distribusi dan tinjau konteks "
-            "narasi secara utuh."
-        )
-    elif verdict == "terkoordinasi":
-        parts.append(
-            "Pola kemiripan dan kedekatan waktu menunjukkan amplifikasi terkoordinasi. "
-            "Telusuri akun dan kanal penyebar utama."
-        )
-    elif verdict == "risiko_rendah":
-        parts.append(
-            "Tidak ada indikasi kuat pada sinyal yang tersedia, namun kebenaran isi tetap belum "
-            "diverifikasi platform."
-        )
-    else:
-        parts.append("Diperlukan verifikasi analis terhadap klaim dan konteks sebelum diambil tindakan.")
-
-    return " ".join(parts)
+    """Ringkasan narasi tanpa status akhir — status ditetapkan EBDE."""
+    return (
+        f"Skor risiko {risk_score}/100 ({level}) mengukur pola penyebaran dan kelemahan "
+        f"atribusi, bukan kebenaran isi. Sinyal {signal.title} mencatat {signal.score}/100 "
+        f"dengan tingkat {signal.level}."
+    )
 
 
-def _build_limitations(corpus_size: int, min_corpus: int) -> list[str]:
-    limitations = [
+def _build_limitations() -> list[str]:
+    return [
         FACTCHECK_LIMITATION["off"],
-        "Sinyal bot/AI hanya memakai pola teks karena metadata aktivitas akun tidak tersedia.",
-        "Analisis provokasi bergantung pada leksikon dan dapat melewatkan sarkasme atau konteks budaya.",
+        NARRATIVE_LIMITATION,
         "Semua hasil wajib ditinjau analis manusia sebelum dijadikan dasar tindakan.",
     ]
-    if corpus_size < min_corpus:
-        limitations.append(
-            "Korpus pembanding masih kecil sehingga skor koordinasi belum reliabel."
-        )
-    return limitations
 
 
-def assess_signals(
-    signals: dict[str, SignalResult],
-    matches: list[CoordinationMatch],
-    *,
-    corpus_size: int,
-    min_corpus: int,
-) -> Assessment:
-    risk_score = int(round(_risk_score(signals)))
+def assess_signals(signals: dict[str, SignalResult]) -> Assessment:
+    """Penilaian narasi murni: hanya sinyal heuristik yang dipakai.
+
+    Sinyal model IndoBERT (bila aktif) disimpan terpisah dan tidak masuk ke
+    fungsi ini. Verdict yang dikembalikan bersifat indikatif, bukan verdict
+    faktual — lihat `ebde.assess_evidence`.
+    """
+    signal = signals["hoax"]
+    risk_score = signal.score
     level = risk_level(risk_score)
-    verdict = _decide_verdict(signals, matches, risk_score)
-    confidence = sum(
-        signal.confidence * SIGNAL_WEIGHTS.get(category, 0.0)
-        for category, signal in signals.items()
-    )
-    summary = _build_summary(
-        verdict=verdict,
+    verdict = _decide_narrative_verdict(risk_score)
+    summary = _build_narrative_summary(
         risk_score=risk_score,
         level=level,
-        signals=signals,
-        matches=matches,
-        corpus_size=corpus_size,
+        signal=signal,
     )
     return Assessment(
         verdict=verdict,
         risk_score=risk_score,
         risk_level=level,
-        confidence=round(confidence, 2),
+        confidence=signal.confidence,
         summary=summary,
-        limitations=_build_limitations(corpus_size, min_corpus),
+        limitations=_build_limitations(),
     )
 
 
-def run_analysis(
-    *,
-    text: str,
-    title: str | None,
-    reference_time: datetime,
-    candidates: Sequence[CoordinationCandidate] = (),
-    threshold: float = 0.28,
-    min_corpus: int = 3,
-) -> AnalysisOutcome:
+def _model_signal(text: str, title: str | None) -> SignalResult | None:
+    """Sinyal pembanding; kegagalan apa pun tidak boleh menjatuhkan analisis."""
+    try:
+        return indobert.analyze_with_model(text, title)
+    except Exception as exc:  # noqa: BLE001 - sinyal opsional tidak memutus pipeline
+        logger.warning(
+            "indobert_signal_skipped", extra={"extra_fields": {"error": str(exc)}}
+        )
+        return None
+
+
+def run_analysis(*, text: str, title: str | None) -> AnalysisOutcome:
     if word_count(text) < 8:
         raise ValueError("Teks terlalu pendek untuk dianalisis (minimal 8 kata).")
 
     hoax_signal, claims = analyze_hoax(text, title)
-    provocation_signal = analyze_provocation(text, title)
-    bot_signal = analyze_bot_signals(text, title)
-    coordination_result = analyze_coordination(
-        text=text,
-        title=title,
-        reference_time=reference_time,
-        candidates=candidates,
-        threshold=threshold,
-        min_corpus=min_corpus,
-    )
+    assessment = assess_signals({"hoax": hoax_signal})
+    signals = [hoax_signal]
+    limitations = list(assessment.limitations)
+    summary = assessment.summary
 
-    signals = {
-        "hoax": hoax_signal,
-        "provocation": provocation_signal,
-        "coordination": coordination_result.signal,
-        "bot_ai": bot_signal,
-    }
-
-    assessment = assess_signals(
-        signals,
-        coordination_result.matches,
-        corpus_size=coordination_result.corpus_size,
-        min_corpus=min_corpus,
-    )
+    model_signal = _model_signal(text, title)
+    if model_signal is not None:
+        signals.append(model_signal)
+        limitations.append(MODEL_LIMITATION)
+        summary = (
+            f"{summary} Model IndoBERT lokal menilai konten ini {model_signal.score}/100 "
+            "ke arah hoax (pembanding, bukan bukti maupun penentu status)."
+        )
 
     return AnalysisOutcome(
-        signals=[hoax_signal, provocation_signal, coordination_result.signal, bot_signal],
+        signals=signals,
         claims=claims,
-        matches=coordination_result.matches,
-        verdict=assessment.verdict,
+        # Status sementara: keputusan akhir diisi EBDE setelah bukti terkumpul.
+        verdict=VERDICT_BELUM_DAPAT_DINILAI,
         risk_score=assessment.risk_score,
         risk_level=assessment.risk_level,
         confidence=assessment.confidence,
-        summary=assessment.summary,
-        limitations=assessment.limitations,
-        corpus_size=coordination_result.corpus_size,
+        summary=summary,
+        limitations=limitations,
+        model_used=indobert.MODEL_VERSION if model_signal is not None else None,
+        narrative_verdict=assessment.verdict,
     )
+
+
+def apply_decision(outcome: AnalysisOutcome, decision) -> AnalysisOutcome:
+    """Terapkan keputusan EBDE tanpa menyentuh risk score narasi."""
+    outcome.verdict = decision.verdict
+    outcome.confidence = decision.confidence
+    outcome.decision = decision
+    outcome.summary = f"{decision.summary} {outcome.summary}".strip()
+
+    prefix = [DECISION_LIMITATION]
+    if decision.insufficient_reason:
+        prefix.append(decision.insufficient_reason)
+    outcome.limitations = prefix + [
+        item for item in outcome.limitations if item not in prefix
+    ]
+    return outcome

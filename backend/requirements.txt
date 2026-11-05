@@ -5,3 +5,11 @@ httpx==0.28.1
 beautifulsoup4==4.12.3
 trafilatura==2.0.0
 python-dotenv==1.0.1
+
+# --- Sinyal model IndoBERT lokal (opsional) ---
+# Di Windows, `pip install torch` dari PyPI sudah berupa build CPU. Di Linux
+# wheel PyPI membawa CUDA (~2 GB); pakai indeks CPU agar hemat:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch
+torch>=2.0
+transformers>=4.40
+safetensors>=0.3

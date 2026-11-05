@@ -181,7 +181,7 @@ export default function Analyses() {
       <ConfirmDialog
         open={pending !== null}
         title={pendingCount === 1 ? "Hapus analisis ini?" : `Hapus ${pendingCount} analisis?`}
-        description="Riwayat analisis beserta sinyal, klaim, bukti, dan tautan koordinasi terkait akan dihapus permanen. Tindakan ini tidak dapat dibatalkan."
+        description="Riwayat analisis beserta sinyal, klaim, dan bukti terkait akan dihapus permanen. Tindakan ini tidak dapat dibatalkan."
         confirmLabel={pendingCount > 1 ? `Hapus ${pendingCount}` : "Hapus"}
         busy={deletion.isPending}
         error={

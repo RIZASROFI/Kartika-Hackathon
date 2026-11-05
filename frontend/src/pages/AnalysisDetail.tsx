@@ -7,7 +7,7 @@ import {
   ExternalLink,
   FileText,
   Link2,
-  Network,
+  Scale,
   ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
@@ -30,10 +30,16 @@ import {
   CATEGORY_META,
   CLAIM_EVIDENCE_META,
   CLAIM_VERDICT_META,
+  DECISION_STANCE_META,
   verdictMeta,
 } from "../lib/labels";
-import type { Evidence, FactCheckSummary, FactCheckVerdict } from "../lib/types";
-import { cn, formatDate, formatPercent, hoursLabel } from "../lib/utils";
+import type {
+  Evidence,
+  EvidenceDecision,
+  FactCheckSummary,
+  FactCheckVerdict,
+} from "../lib/types";
+import { cn, formatDate, formatPercent } from "../lib/utils";
 
 const EVIDENCE_KIND_LABEL: Record<string, string> = {
   sumber_utama: "Sumber utama",
@@ -42,6 +48,11 @@ const EVIDENCE_KIND_LABEL: Record<string, string> = {
   factcheck: "Pemeriksaan fakta",
   pencarian_web: "Pencarian web terbuka",
   konteks: "Konteks",
+};
+
+const FACTCHECK_PROVIDER_LABEL: Record<string, string> = {
+  google: "Google Fact Check Tools",
+  mafindo: "MAFINDO Yudistira",
 };
 
 const FACTCHECK_META: Record<FactCheckVerdict, { label: string; badge: string }> = {
@@ -63,6 +74,161 @@ const FACTCHECK_META: Record<FactCheckVerdict, { label: string; badge: string }>
   },
 };
 
+function DecisionCard({ decision }: { decision: Partial<EvidenceDecision> | undefined }) {
+  if (!decision?.verdict) {
+    return null;
+  }
+
+  const items = decision.items ?? [];
+  const sides = [
+    {
+      key: "support",
+      label: "Mendukung",
+      weight: decision.support_weight ?? 0,
+      groups: decision.support_groups ?? 0,
+      bar: "bg-emerald-400",
+    },
+    {
+      key: "refute",
+      label: "Membantah",
+      weight: decision.refute_weight ?? 0,
+      groups: decision.refute_groups ?? 0,
+      bar: "bg-rose-400",
+    },
+    {
+      key: "partial",
+      label: "Sebagian benar",
+      weight: decision.partial_weight ?? 0,
+      groups: decision.partial_groups ?? 0,
+      bar: "bg-amber-400",
+    },
+  ];
+  const total = sides.reduce((sum, side) => sum + side.weight, 0);
+
+  return (
+    <Card>
+      <SectionHeading
+        title="Keputusan berbasis bukti"
+        subtitle={
+          decision.engine
+            ? `Evidence-Based Decision Engine ${decision.engine} · bobot = relevansi × kredibilitas × kebaruan, dihitung per domain independen`
+            : "Evidence-Based Decision Engine"
+        }
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <VerdictBadge verdict={decision.verdict} />
+        <span className="chip border-white/10 bg-white/5 text-slate-400">
+          keyakinan bukti {Math.round((decision.confidence ?? 0) * 100)}%
+        </span>
+        <span className="chip border-white/10 bg-white/5 text-slate-400">
+          {decision.independent_groups ?? 0} domain independen
+        </span>
+        {decision.conflict ? (
+          <span className="chip border-orange-400/30 bg-orange-400/10 text-orange-300">
+            Bukti bertentangan
+          </span>
+        ) : null}
+        {decision.sufficient === false ? (
+          <span className="chip border-amber-400/30 bg-amber-400/10 text-amber-300">
+            Bukti belum cukup
+          </span>
+        ) : null}
+      </div>
+
+      <p className="mt-3 text-xs leading-relaxed text-slate-400">{decision.rationale}</p>
+
+      <div className="mt-4 space-y-2.5">
+        {sides.map((side) => (
+          <div key={side.key}>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400">
+                {side.label}
+                <span className="ml-1 text-slate-600">· {side.groups} domain</span>
+              </span>
+              <span className="font-mono text-[10px] text-slate-500">
+                bobot {side.weight.toFixed(2)}
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/5">
+              <div
+                className={cn("h-full rounded-full", side.bar)}
+                style={{ width: total ? `${Math.max(2, (side.weight / total) * 100)}%` : "0%" }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!decision.sufficient && decision.insufficient_reason ? (
+        <p className="mt-3 flex items-start gap-1.5 rounded-lg border border-amber-400/15 bg-amber-400/[0.04] p-2.5 text-[11px] leading-relaxed text-amber-100/70">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-300" />
+          {decision.insufficient_reason}
+        </p>
+      ) : null}
+
+      {items.length ? (
+        <details className="mt-4 border-t border-white/5 pt-3">
+          <summary className="cursor-pointer text-[11px] font-medium text-slate-400">
+            Jejak penilaian {items.length} bukti
+          </summary>
+          <ul className="mt-2.5 space-y-2">
+            {items.map((item) => {
+              const stance = DECISION_STANCE_META[item.stance] ?? DECISION_STANCE_META.netral;
+              return (
+                <li
+                  key={`${item.url}-${item.title}`}
+                  className="rounded-lg border border-white/5 bg-white/[0.015] p-2.5"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={cn("chip", stance.badge)}>{stance.label}</span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      bobot {item.weight.toFixed(2)}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-600">
+                      rel {item.relevance.toFixed(2)} · kred {item.credibility.toFixed(2)} · baru{" "}
+                      {item.recency.toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 truncate text-[11px] text-slate-300">
+                    {item.url ? (
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="hover:text-cyan-300 hover:underline"
+                      >
+                        {item.title}
+                      </a>
+                    ) : (
+                      item.title
+                    )}
+                  </p>
+                  <p className="text-[10px] text-slate-600">
+                    {item.publisher || item.group} ·{" "}
+                    {item.kind === "factcheck" ? "pemeriksaan fakta" : "pencarian web"}
+                  </p>
+                  {item.note ? (
+                    <p className="mt-1 flex items-start gap-1.5 text-[10px] leading-relaxed text-amber-200/70">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-300/80" />
+                      {item.note}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      ) : null}
+
+      <p className="mt-3 flex items-start gap-1.5 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
+        <Scale className="mt-0.5 h-3 w-3 shrink-0 text-cyan-400/70" />
+        Skor risiko narasi ({decision.narrative_risk ?? 0}/100) tidak dipakai sebagai bukti dan
+        tidak dapat menggeser status ini.
+      </p>
+    </Card>
+  );
+}
+
 function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | undefined }) {
   const status = factcheck?.status;
   if (!status || status === "disabled") {
@@ -70,12 +236,24 @@ function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | u
   }
 
   const hits = factcheck?.hits ?? [];
+  const providers = factcheck?.providers?.length
+    ? factcheck.providers
+    : factcheck?.provider
+      ? factcheck.provider.split("+")
+      : [];
+  const providerLabel = providers
+    .map((provider) => FACTCHECK_PROVIDER_LABEL[provider] ?? provider)
+    .join(" · ");
 
   return (
     <Card>
       <SectionHeading
         title="Verifikasi fakta eksternal"
-        subtitle="Google Fact Check Tools · klaim yang sudah diperiksa pihak lain"
+        subtitle={
+          providerLabel
+            ? `${providerLabel} · klaim yang sudah diperiksa pihak lain`
+            : "Klaim yang sudah diperiksa pihak lain"
+        }
       />
       {status === "matched" ? (
         <ul className="space-y-2.5">
@@ -94,7 +272,10 @@ function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | u
                   {hit.claim}
                 </p>
                 <p className="mt-2 text-[11px] text-slate-500">
-                  {hit.publisher} · {formatDate(hit.review_date, false)}
+                  {hit.publisher}
+                  {hit.provider ? ` · ${FACTCHECK_PROVIDER_LABEL[hit.provider] ?? hit.provider}` : ""}
+                  {" · "}
+                  {formatDate(hit.review_date, false)}
                 </p>
                 {hit.url ? (
                   <a
@@ -111,10 +292,18 @@ function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | u
           })}
         </ul>
       ) : status === "no_match" ? (
-        <p className="text-xs leading-relaxed text-slate-500">
-          Belum ada pemeriksaan fakta publik yang cocok dengan klaim pada konten ini.
-          Ketiadaan catatan bukan bukti kebenaran.
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs leading-relaxed text-slate-500">
+            {providerLabel || "Sumber pemeriksa fakta"} sudah dicari, tetapi belum ada
+            pemeriksaan fakta publik yang cocok dengan klaim pada konten ini. Ketiadaan
+            catatan bukan bukti kebenaran.
+          </p>
+          {factcheck?.keywords?.length ? (
+            <p className="text-[11px] leading-relaxed text-slate-600">
+              Kata kunci yang dicari: {factcheck.keywords.join(", ")}
+            </p>
+          ) : null}
+        </div>
       ) : (
         <p className="text-xs leading-relaxed text-amber-200/70">
           {factcheck?.message ??
@@ -254,28 +443,26 @@ export default function AnalysisDetail() {
             <p className="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{data.summary}</p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <ConfidencePill value={data.confidence} />
-              {data.related.length ? (
-                <span className="inline-flex items-center gap-1.5 text-xs text-fuchsia-300">
-                  <Network className="h-3.5 w-3.5" />
-                  {data.related.length} konten terkait terdeteksi
-                </span>
-              ) : null}
             </div>
           </div>
-          <div className="flex justify-center lg:justify-end">
+          <div className="flex flex-col items-center gap-2 lg:items-end">
             <ScoreRing score={data.risk_score} level={data.risk_level} />
+            <p className="max-w-[150px] text-center text-[10px] leading-relaxed text-slate-500 lg:text-right">
+              Risiko penyebaran (narasi), bukan verdict fakta
+            </p>
           </div>
         </div>
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="space-y-6">
+          <DecisionCard decision={data.decision} />
           <div>
             <SectionHeading
               title="Analisis sinyal"
-              subtitle="Empat dimensi independen dengan skor 0–100"
+              subtitle="Sinyal heuristik dan model dengan skor 0–100"
             />
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4">
               {data.signals.map((signal) => {
                 const meta = CATEGORY_META[signal.category];
                 const Icon = meta?.icon ?? ShieldAlert;
@@ -409,56 +596,6 @@ export default function AnalysisDetail() {
 
         <div className="space-y-6">
           <FactCheckCard factcheck={data.factcheck} />
-
-          <Card>
-            <SectionHeading
-              title="Konten terkait"
-              subtitle="Indikasi amplifikasi narasi dalam jendela waktu"
-            />
-            {data.related.length ? (
-              <ul className="space-y-3">
-                {data.related.map((related) => (
-                  <li key={related.id}>
-                    <Link
-                      to={`/analisis/${related.id}`}
-                      className="group block rounded-xl border border-white/5 bg-white/[0.015] p-3.5 transition hover:border-fuchsia-400/25 hover:bg-fuchsia-400/[0.04]"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-fuchsia-300">
-                          {formatPercent(related.similarity)} mirip
-                        </span>
-                        <VerdictBadge verdict={related.verdict} short />
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-xs font-medium text-slate-200 group-hover:text-white">
-                        {related.title}
-                      </p>
-                      <p className="mt-1.5 text-[11px] text-slate-500">
-                        {related.hours_apart !== null
-                          ? `selisih ${hoursLabel(related.hours_apart)}`
-                          : "waktu tidak diketahui"}
-                      </p>
-                      {related.shared_phrases.length ? (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {related.shared_phrases.slice(0, 3).map((phrase) => (
-                            <span
-                              key={phrase}
-                              className="rounded-md border border-white/5 bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-slate-500"
-                            >
-                              “{phrase}”
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs leading-relaxed text-slate-500">
-                Tidak ada konten dengan kemiripan narasi di atas ambang pada jendela waktu ini.
-              </p>
-            )}
-          </Card>
 
           <Card>
             <SectionHeading

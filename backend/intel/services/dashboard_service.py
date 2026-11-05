@@ -8,25 +8,32 @@ from datetime import timedelta
 from django.db.models import Avg, Count, Max, Q
 from django.utils import timezone
 
+from intel.analysis.ebde import (
+    VERDICT_BELUM_DAPAT_DINILAI,
+    VERDICT_CAMPURAN,
+    VERDICT_PERLU_VERIFIKASI,
+    VERDICT_TERINDIKASI_FAKTA,
+    VERDICT_TERINDIKASI_HOAKS,
+)
 from intel.analysis.pipeline import VERDICT_LABELS
-from intel.models import Analysis, AnalysisSignal, Claim, ContentItem, CoordinationLink
+from intel.models import Analysis, AnalysisSignal, Claim, ContentItem
 from intel.serializers import AnalysisListItemSerializer
 
 CATEGORY_LABELS = {
     "hoax": "Hoax & Fakta",
-    "provocation": "Provokasi",
-    "coordination": "Koordinasi",
-    "bot_ai": "Bot & AI",
+    "indobert": "Model IndoBERT",
 }
 VERDICT_ORDER = [
-    "terkoordinasi",
+    VERDICT_TERINDIKASI_HOAKS,
+    VERDICT_TERINDIKASI_FAKTA,
+    VERDICT_CAMPURAN,
+    VERDICT_PERLU_VERIFIKASI,
+    VERDICT_BELUM_DAPAT_DINILAI,
+    # Format lama tetap muncul selama riwayat lama belum dimigrasikan.
     "terindikasi_menyesatkan",
-    "provokatif",
-    "perlu_verifikasi",
     "risiko_rendah",
 ]
 TREND_DAYS = 14
-DEFAULT_TITLE = "Konten tanpa judul"
 
 
 def _iso(value) -> str | None:
@@ -41,10 +48,6 @@ def build_dashboard() -> dict:
     total_analyses = Analysis.objects.count()
     total_contents = ContentItem.objects.count()
     total_claims = Claim.objects.count()
-    link_pairs = CoordinationLink.objects.values_list(
-        "analysis_id", "related_analysis_id"
-    )
-    total_links = len({frozenset(pair) for pair in link_pairs})
     aggregates = Analysis.objects.aggregate(
         average_risk=Avg("risk_score"),
         high_risk=Count("id", filter=Q(risk_score__gte=50)),
@@ -61,7 +64,7 @@ def build_dashboard() -> dict:
             "count": verdict_counts.get(verdict, 0),
         }
         for verdict in VERDICT_ORDER
-        if verdict_counts.get(verdict, 0) > 0 or verdict == "risiko_rendah"
+        if verdict_counts.get(verdict, 0) > 0
     ]
 
     start_day = (now - timedelta(days=TREND_DAYS - 1)).date()
@@ -103,37 +106,6 @@ def build_dashboard() -> dict:
     recent = Analysis.objects.select_related("content").order_by("-created_at")[:6]
     recent_analyses = AnalysisListItemSerializer(recent, many=True).data
 
-    alert_rows = CoordinationLink.objects.select_related(
-        "analysis__content", "related_analysis__content"
-    ).order_by("-created_at")
-    coordination_alerts = []
-    seen_pairs: set[frozenset] = set()
-    for link in alert_rows:
-        pair = frozenset((link.analysis_id, link.related_analysis_id))
-        if pair in seen_pairs:
-            continue
-        seen_pairs.add(pair)
-        coordination_alerts.append(
-            {
-                "analysis_id": str(link.analysis_id),
-                "title": (link.analysis.content.title if link.analysis.content else None)
-                or DEFAULT_TITLE,
-                "verdict": link.analysis.verdict,
-                "risk_score": link.analysis.risk_score,
-                "related_title": (
-                    link.related_analysis.content.title
-                    if link.related_analysis.content
-                    else None
-                )
-                or DEFAULT_TITLE,
-                "similarity": link.similarity,
-                "hours_apart": link.hours_apart,
-                "created_at": _iso(link.created_at),
-            }
-        )
-        if len(coordination_alerts) >= 8:
-            break
-
     return {
         "generated_at": _iso(now),
         "totals": {
@@ -141,12 +113,10 @@ def build_dashboard() -> dict:
             "contents": total_contents,
             "high_risk": aggregates["high_risk"] or 0,
             "average_risk": round(float(aggregates["average_risk"] or 0), 1),
-            "coordination_links": total_links,
             "claims": total_claims,
         },
         "verdict_distribution": verdict_distribution,
         "risk_trend": risk_trend,
         "category_scores": category_scores,
         "recent_analyses": recent_analyses,
-        "coordination_alerts": coordination_alerts,
     }

@@ -1,10 +1,14 @@
-"""Pencarian pemeriksaan fakta eksternal (Google Fact Check Tools API).
+"""Pencarian pemeriksaan fakta eksternal (Google Fact Check Tools + MAFINDO).
 
 Modul ini bersifat *retrieval*: ia hanya menanyakan apakah sebuah klaim sudah
 pernah diperiksa lembaga pemeriksa fakta. Hasilnya tidak mengubah verdict
 heuristik, melainkan dilampirkan sebagai bukti pendukung yang dapat diaudit.
 Semua kegagalan jaringan/kuota ditangani sebagai status, bukan exception, agar
 analisis tetap selesai saat API tidak tersedia.
+
+Dua provider didukung: Google Fact Check Tools (klaim global) dan MAFINDO
+Yudistira Public API v2 (basis data cek fakta Indonesia). Keduanya dijalankan
+terpisah agar kegagalan salah satu tidak menghapus temuan yang lain.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ import logging
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import timedelta
+from urllib.parse import urlparse
 
 import httpx
 from django.conf import settings
@@ -31,6 +36,31 @@ MAX_HITS = 5
 MAX_QUERY_CHARS = 200
 MIN_TOKEN_LENGTH = 4
 DEFAULT_OVERLAP = 0.45
+
+MAFINDO_PROVIDER = "mafindo"
+MAFINDO_SEARCH_PATH = "/antihoax/search"
+# Server MAFINDO memblokir User-Agent non-browser dan path dengan trailing
+# slash (keduanya membalas HTTP 403), jadi keduanya dikunci di sini.
+MAFINDO_USER_AGENT = "KARTIKA-Intel/0.1.0"
+MAFINDO_MAX_KEYWORDS = 4
+MAFINDO_FALLBACK_PUBLISHER = "MAFINDO"
+URL_RE = re.compile(r"https?://[^\s,]+")
+ENTITY_RE = re.compile(r"[A-Za-z]+|[0-9]+")
+# Kata jabatan/generik: sering berhuruf kapital tetapi tidak membedakan klaim.
+ROLE_WORDS = {
+    "presiden",
+    "menteri",
+    "pemerintah",
+    "pemerintahan",
+    "wakil",
+    "ketua",
+    "bapak",
+    "saudara",
+    "saudari",
+    "kalian",
+    "semua",
+    "follow",
+}
 
 # Urutan penting: "tidak benar" harus dinilai sebelum "benar".
 RATING_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -146,6 +176,7 @@ class FactCheckHit:
     title: str
     review_date: str | None = None
     query: str = ""
+    provider: str = PROVIDER
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -155,16 +186,24 @@ class FactCheckHit:
 class FactCheckResult:
     status: str
     queries: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
     hits: list[FactCheckHit] = field(default_factory=list)
+    providers: list[str] = field(default_factory=list)
     message: str | None = None
-    provider: str = PROVIDER
     checked_at: str = field(default_factory=lambda: timezone.now().isoformat())
+
+    @property
+    def provider(self) -> str:
+        """Nama provider gabungan, dipertahankan agar klien lama tetap jalan."""
+        return "+".join(self.providers)
 
     def to_json(self) -> dict:
         return {
             "provider": self.provider,
+            "providers": self.providers,
             "status": self.status,
             "queries": self.queries,
+            "keywords": self.keywords,
             "checked_at": self.checked_at,
             "message": self.message,
             "hit_count": len(self.hits),
@@ -247,10 +286,11 @@ def is_relevant_hit(
     return len(shared) / len(query_tokens) >= threshold
 
 
-def _query_hash(query: str) -> str:
+def _query_hash(query: str, *, provider: str, method: str) -> str:
     raw = "|".join(
         (
-            PROVIDER,
+            provider,
+            method,
             (settings.FACTCHECK_LANGUAGE_CODE or "any").casefold(),
             normalize_whitespace(query).casefold(),
         )
@@ -284,22 +324,30 @@ def _build_queries(
     return queries
 
 
-def _cached_payload(query: str) -> dict | None:
+def _cached_payload(query: str, *, provider: str, method: str) -> dict | list | None:
     row = FactCheckQuery.objects.filter(
-        query_hash=_query_hash(query), expires_at__gt=timezone.now()
+        query_hash=_query_hash(query, provider=provider, method=method),
+        expires_at__gt=timezone.now(),
     ).first()
     return row.payload if row else None
 
 
-def _store_payload(query: str, payload: dict) -> None:
+def _cache_payload(
+    query: str,
+    payload: dict | list,
+    *,
+    provider: str,
+    method: str,
+    hit_count: int,
+) -> None:
     ttl = timedelta(hours=max(1, settings.FACTCHECK_CACHE_TTL_HOURS))
     FactCheckQuery.objects.update_or_create(
-        query_hash=_query_hash(query),
+        query_hash=_query_hash(query, provider=provider, method=method),
         defaults={
-            "provider": PROVIDER,
+            "provider": provider,
             "query_text": query[:512],
             "payload": payload,
-            "hit_count": len(payload.get("claims") or []),
+            "hit_count": hit_count,
             "created_at": timezone.now(),
             "expires_at": timezone.now() + ttl,
         },
@@ -385,6 +433,228 @@ def _extract_hits(payload: dict, *, query: str, source_tokens: set[str]) -> list
     return hits
 
 
+def _first_url(*values: object) -> str:
+    for value in values:
+        match = URL_RE.search(str(value or ""))
+        if match:
+            return match.group(0).rstrip(".,;)")
+    return ""
+
+
+def _host(url: str) -> str:
+    host = (urlparse(url).hostname or "").casefold()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _lowercase_tokens(text: str) -> set[str]:
+    """Token yang ditulis huruf kecil di teks sumber: kata isi, bukan nama diri.
+
+    Kapitalisasi dibaca dari teks yang dianalisis, bukan dari judul artikel cek
+    fakta: judul hampir selalu Title Case sehingga tidak membedakan apa pun.
+    """
+    tokens: set[str] = set()
+    for match in ENTITY_RE.finditer(text or ""):
+        raw = match.group()
+        token = raw.casefold()
+        if (
+            raw[0].islower()
+            and len(token) >= MIN_TOKEN_LENGTH
+            and token not in STOPWORDS
+        ):
+            tokens.add(token)
+    return tokens
+
+
+def _mafindo_article_url(item: dict, claim_url: str) -> str:
+    """Tautan artikel cek fakta.
+
+    `claim_review.claim_url` kadang menunjuk sumber klaim yang diperiksa (mis.
+    YouTube) alih-alih artikelnya. URL dengan host yang sama dengan
+    `source_link` karena itu dilewati.
+    """
+    source_host = _host(str(item.get("source_link") or ""))
+    claim_host = _host(claim_url)
+    if claim_host and claim_host != source_host:
+        return _first_url(claim_url)
+    return _first_url(item.get("references"), claim_url)
+
+
+def _is_relevant_mafindo_hit(
+    hit_title: str,
+    *,
+    query_tokens: set[str],
+    source_tokens: set[str],
+    content_tokens: set[str],
+) -> bool:
+    """Relevansi MAFINDO: aturan umum ditambah syarat kata isi yang sama.
+
+    Caption media sosial sering menyebut banyak tokoh, sehingga kecocokan yang
+    hanya berupa nama diri (mis. "Prabowo" dan "Bahlil") menghasilkan artikel
+    tentang klaim lain. Minimal satu kata isi dari teks sumber harus sama.
+    """
+    if not is_relevant_hit(
+        hit_title, query_tokens=query_tokens, source_tokens=source_tokens
+    ):
+        return False
+    shared = _tokens(hit_title) & (source_tokens | query_tokens)
+    return bool(shared & content_tokens)
+
+
+def _mafindo_keywords(text: str, *, limit: int = MAFINDO_MAX_KEYWORDS) -> list[str]:
+    """Kata kunci satu kata untuk pencarian MAFINDO.
+
+    Pencarian MAFINDO mencocokkan frasa utuh (`ekspor gas` cocok, `gas
+    singapura` tidak), sehingga rangkaian beberapa kata hampir selalu kosong.
+    Satu kata selalu berupa frasa yang sah. Nama diri (kata berhuruf kapital di
+    tengah kalimat) didahulukan karena paling khas dan sering muncul di judul
+    artikel cek fakta; sisanya diisi kata terpanjang tanpa kata fungsi.
+    """
+    words: list[str] = []
+    entities: list[str] = []
+    seen: set[str] = set()
+    for match in ENTITY_RE.finditer(text):
+        raw = match.group()
+        token = raw.casefold()
+        if token in seen or token.isdigit():
+            continue
+        if len(token) < MIN_TOKEN_LENGTH or token in STOPWORDS or token in ROLE_WORDS:
+            continue
+        previous = text[: match.start()].rstrip()
+        at_sentence_start = not previous or previous[-1] in ".!?\n:;•-—\"'("
+        seen.add(token)
+        if raw[0].isupper() and not at_sentence_start:
+            entities.append(token)
+        else:
+            words.append(token)
+    entities.sort(key=len, reverse=True)
+    words.sort(key=len, reverse=True)
+    return (entities + words)[: max(1, limit)]
+
+
+def _fetch_mafindo(*, method: str, value: str) -> list[dict]:
+    """Panggil endpoint pencarian Yudistira. Dipisah agar mudah di-mock."""
+    data = {
+        "key": settings.MAFINDO_API_KEY,
+        "method": method,
+        "value": value,
+        "limit": max(1, settings.MAFINDO_PAGE_SIZE),
+    }
+    url = f"{settings.MAFINDO_BASE_URL}{MAFINDO_SEARCH_PATH}"
+
+    try:
+        with httpx.Client(
+            timeout=settings.MAFINDO_TIMEOUT_SECONDS,
+            headers={"Accept": "application/json", "User-Agent": MAFINDO_USER_AGENT},
+        ) as client:
+            response = client.post(url, data=data)
+    except httpx.HTTPError as exc:
+        raise FactCheckError(
+            f"Koneksi ke MAFINDO gagal: {exc.__class__.__name__}."
+        ) from exc
+
+    if response.status_code in {401, 403}:
+        raise FactCheckError(
+            "MAFINDO menolak permintaan "
+            f"(HTTP {response.status_code}). Periksa API key Mafindo.",
+            status_code=response.status_code,
+        )
+    if response.status_code == 429:
+        raise FactCheckError(
+            "Kuota MAFINDO habis (HTTP 429). Coba lagi nanti.", status_code=429
+        )
+    if response.status_code >= 400:
+        raise FactCheckError(
+            f"MAFINDO mengembalikan HTTP {response.status_code}.",
+            status_code=response.status_code,
+        )
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise FactCheckError("Respons MAFINDO bukan JSON yang valid.") from exc
+
+    # Kunci yang salah tidak memakai status HTTP error: body-nya string
+    # "Access failed" dengan HTTP 200, jadi isi respons harus diperiksa.
+    if isinstance(payload, str):
+        raise FactCheckError(
+            f"MAFINDO menolak permintaan: {payload}.", status_code=401
+        )
+    if not isinstance(payload, list):
+        raise FactCheckError("Bentuk respons MAFINDO tidak dikenali.")
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def _mafindo_rating(item: dict) -> tuple[str, str]:
+    """Label dan status UI dari satu item MAFINDO.
+
+    Dokumentasi menyebut status `1`/`2`, tetapi data nyata juga memuat label
+    teks seperti "Salah" atau "Benar", jadi keduanya ditangani.
+    """
+    rating = normalize_whitespace(str(item.get("status") or ""))
+    classification = normalize_whitespace(str(item.get("classification") or ""))
+    if rating in {"1", "2"}:
+        return ("Fakta", "fakta") if rating == "1" else ("Hoaks", "hoax")
+    return (
+        rating or classification or "Tanpa label",
+        classify_rating(f"{rating} {classification}"),
+    )
+
+
+def _extract_mafindo_hits(
+    items: list[dict],
+    *,
+    query: str,
+    source_tokens: set[str],
+    match_text: str | None = None,
+) -> list[FactCheckHit]:
+    """Petakan hasil MAFINDO menjadi hit; `query` hanya label kueri.
+
+    `match_text` adalah teks yang dipakai menilai relevansi. Kueri MAFINDO
+    berupa satu kata, sedangkan penilaian relevansi butuh seluruh klaim, jadi
+    keduanya dipisah.
+    """
+    reference_text = match_text or query
+    query_tokens = _tokens(reference_text)
+    content_tokens = _lowercase_tokens(reference_text)
+    hits: list[FactCheckHit] = []
+    for item in items:
+        title = normalize_whitespace(str(item.get("title") or ""))
+        if not title:
+            continue
+        if not _is_relevant_mafindo_hit(
+            title,
+            query_tokens=query_tokens,
+            source_tokens=source_tokens,
+            content_tokens=content_tokens,
+        ):
+            continue
+
+        reviews = item.get("claim_review")
+        claim_url = ""
+        if isinstance(reviews, list):
+            for review in reviews:
+                if isinstance(review, dict) and review.get("claim_url"):
+                    claim_url = str(review["claim_url"])
+                    break
+
+        rating, status = _mafindo_rating(item)
+        publisher = normalize_whitespace(str(item.get("authors") or ""))
+        hits.append(
+            FactCheckHit(
+                claim=title[:500],
+                rating=rating[:120],
+                status=status,
+                publisher=(publisher or MAFINDO_FALLBACK_PUBLISHER)[:256],
+                url=_mafindo_article_url(item, claim_url),
+                title=title[:512],
+                review_date=(str(item.get("tanggal") or "").strip() or None),
+                query=query,
+                provider=MAFINDO_PROVIDER,
+            )
+        )
+    return hits
+
+
 def _dedupe(hits: list[FactCheckHit]) -> list[FactCheckHit]:
     seen: set[str] = set()
     unique: list[FactCheckHit] = []
@@ -398,47 +668,188 @@ def _dedupe(hits: list[FactCheckHit]) -> list[FactCheckHit]:
     return unique[:MAX_HITS]
 
 
-def run_factcheck(
-    *, text: str, title: str | None = None, claims: list[str] | None = None
-) -> FactCheckResult:
-    """Cari pemeriksaan fakta untuk judul/klaim utama. Tidak pernah melempar error."""
-    if not settings.FACTCHECK_ENABLED:
-        return FactCheckResult(status="disabled")
+def _active_providers() -> list[str]:
+    providers: list[str] = []
+    if settings.FACTCHECK_ENABLED:
+        providers.append(PROVIDER)
+    if settings.MAFINDO_ENABLED:
+        providers.append(MAFINDO_PROVIDER)
+    return providers
 
-    queries = _build_queries(text=text, title=title, claims=claims or [])
-    if not queries:
-        return FactCheckResult(status="no_match", message="Klaim terlalu pendek untuk dicari.")
 
-    source_tokens = _tokens(f"{title or ''} {text}") | _tokens(" ".join(queries))
+def _safe_cache(
+    query: str,
+    payload: dict | list,
+    *,
+    provider: str,
+    method: str,
+    hit_count: int,
+) -> None:
+    try:
+        _cache_payload(
+            query,
+            payload,
+            provider=provider,
+            method=method,
+            hit_count=hit_count,
+        )
+    except Exception:  # pragma: no cover - cache tidak boleh memblokir analisis
+        logger.exception("factcheck_cache_write_failed")
+
+
+def _google_hits(
+    *, queries: list[str], source_tokens: set[str], failures: list[FactCheckError]
+) -> tuple[list[FactCheckHit], bool]:
+    """Kembalikan temuan Google dan apakah provider ini sempat menjawab."""
     hits: list[FactCheckHit] = []
-    errors: list[FactCheckError] = []
-
+    reached = False
     for query in queries:
-        payload = _cached_payload(query)
+        payload = _cached_payload(query, provider=PROVIDER, method="text")
         if payload is None:
             try:
                 payload = _fetch_claims(query)
             except FactCheckError as exc:
-                errors.append(exc)
+                failures.append(exc)
                 logger.warning(
                     "factcheck_failed",
-                    extra={"extra_fields": {"query": query, "error": exc.message}},
+                    extra={
+                        "extra_fields": {
+                            "provider": PROVIDER,
+                            "query": query,
+                            "error": exc.message,
+                        }
+                    },
                 )
                 continue
-            try:
-                _store_payload(query, payload)
-            except Exception:  # pragma: no cover - cache tidak boleh memblokir analisis
-                logger.exception("factcheck_cache_write_failed")
+            _safe_cache(
+                query,
+                payload,
+                provider=PROVIDER,
+                method="text",
+                hit_count=len(payload.get("claims") or []),
+            )
+        reached = True
         hits.extend(_extract_hits(payload, query=query, source_tokens=source_tokens))
+    return hits, reached
+
+
+def _mafindo_hits(
+    *,
+    text: str,
+    title: str | None,
+    match_text: str,
+    source_tokens: set[str],
+    failures: list[FactCheckError],
+) -> tuple[list[FactCheckHit], bool, list[str]]:
+    """Temuan MAFINDO, apakah provider ini sempat menjawab, dan kata kunci yang dipakai."""
+    hits: list[FactCheckHit] = []
+    reached = False
+    # Satu kata kunci = satu request; jumlahnya dibatasi MAFINDO_MAX_QUERIES
+    # agar kuota hemat.
+    keywords = _mafindo_keywords(
+        f"{title or ''} {text}",
+        limit=max(1, settings.MAFINDO_MAX_QUERIES),
+    )
+    for keyword in keywords:
+        payload = _cached_payload(
+            keyword, provider=MAFINDO_PROVIDER, method="title"
+        )
+        if payload is None:
+            try:
+                payload = _fetch_mafindo(method="title", value=keyword)
+            except FactCheckError as exc:
+                failures.append(exc)
+                logger.warning(
+                    "mafindo_factcheck_failed",
+                    extra={
+                        "extra_fields": {
+                            "provider": MAFINDO_PROVIDER,
+                            "method": "title",
+                            "query": keyword,
+                            "error": exc.message,
+                        }
+                    },
+                )
+                continue
+            _safe_cache(
+                keyword,
+                payload,
+                provider=MAFINDO_PROVIDER,
+                method="title",
+                hit_count=len(payload),
+            )
+        reached = True
+        hits.extend(
+            _extract_mafindo_hits(
+                payload,
+                query=keyword,
+                source_tokens=source_tokens,
+                match_text=match_text,
+            )
+        )
+    return hits, reached, keywords
+
+
+def run_factcheck(
+    *, text: str, title: str | None = None, claims: list[str] | None = None
+) -> FactCheckResult:
+    """Cari pemeriksaan fakta untuk judul/klaim utama. Tidak pernah melempar error."""
+    providers = _active_providers()
+    if not providers:
+        return FactCheckResult(status="disabled")
+
+    queries = _build_queries(text=text, title=title, claims=claims or [])
+    if not queries:
+        return FactCheckResult(
+            status="no_match",
+            providers=providers,
+            message="Klaim terlalu pendek untuk dicari.",
+        )
+
+    source_tokens = _tokens(f"{title or ''} {text}") | _tokens(" ".join(queries))
+    failures: list[FactCheckError] = []
+    hits: list[FactCheckHit] = []
+    reached_any = False
+
+    if PROVIDER in providers:
+        google_hits, google_reached = _google_hits(
+            queries=queries, source_tokens=source_tokens, failures=failures
+        )
+        hits.extend(google_hits)
+        reached_any = reached_any or google_reached
+
+    keywords: list[str] = []
+    if MAFINDO_PROVIDER in providers:
+        mafindo_hits, mafindo_reached, keywords = _mafindo_hits(
+            text=text,
+            title=title,
+            match_text=queries[0],
+            source_tokens=source_tokens,
+            failures=failures,
+        )
+        hits.extend(mafindo_hits)
+        reached_any = reached_any or mafindo_reached
 
     hits = _dedupe(hits)
     if hits:
-        return FactCheckResult(status="matched", queries=queries, hits=hits)
-    if errors and len(errors) == len(queries):
         return FactCheckResult(
-            status="unavailable", queries=queries, message=errors[0].message
+            status="matched",
+            queries=queries,
+            keywords=keywords,
+            hits=hits,
+            providers=providers,
         )
-    return FactCheckResult(status="no_match", queries=queries)
+    if failures and not reached_any:
+        return FactCheckResult(
+            status="unavailable",
+            queries=queries,
+            keywords=keywords,
+            providers=providers,
+            message=failures[0].message,
+        )
+    return FactCheckResult(
+        status="no_match", queries=queries, keywords=keywords, providers=providers
+    )
 
 
 def apply_limitation(limitations: list[str] | None, status: str) -> list[str]:

@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import re
-import statistics
 from dataclasses import dataclass, field
 
 WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-ÿ0-9]+")
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 URL_RE = re.compile(r"https?://[^\s<>\"')]+", re.IGNORECASE)
-HASHTAG_RE = re.compile(r"(?<!\w)#\w+", re.UNICODE)
-MENTION_RE = re.compile(r"(?<!\w)@\w+", re.UNICODE)
 
 LEVELS = (
     (75, "kritis"),
@@ -18,6 +15,11 @@ LEVELS = (
     (25, "sedang"),
     (0, "rendah"),
 )
+
+# Ambang status analisis. Dipakai mesin skor, penjelasan sinyal, dan ekstraksi
+# klaim agar ketiganya tidak pernah berbeda angka.
+VERDICT_HOAX_THRESHOLD = 55
+VERDICT_VERIFY_THRESHOLD = 30
 
 
 def risk_level(score: float) -> str:
@@ -56,33 +58,6 @@ def exclamation_ratio(text: str) -> float:
     if total == 0:
         return 0.0
     return (text.count("!") / total) * 100
-
-
-def sentence_length_cv(text: str) -> float:
-    lengths = [len(words(sentence)) for sentence in sentences(text)]
-    lengths = [length for length in lengths if length > 0]
-    if len(lengths) < 3:
-        return 1.0
-    mean = statistics.fmean(lengths)
-    if mean == 0:
-        return 1.0
-    return statistics.pstdev(lengths) / mean
-
-
-def shingles(text: str, size: int = 4) -> set[str]:
-    tokens = [token.lower() for token in words(text)]
-    if len(tokens) < size:
-        return {" ".join(tokens)} if tokens else set()
-    return {" ".join(tokens[i : i + size]) for i in range(len(tokens) - size + 1)}
-
-
-def jaccard(left: set[str], right: set[str]) -> float:
-    if not left or not right:
-        return 0.0
-    union = left | right
-    if not union:
-        return 0.0
-    return len(left & right) / len(union)
 
 
 INFLECTION_PREFIXES = (
@@ -134,8 +109,18 @@ def count_hits(text: str, terms: tuple[str, ...] | list[str]) -> tuple[int, list
     terpanjang dipakai agar “pengkhianatan” tidak dihitung ganda sebagai “khianat”.
     """
     lowered = (text or "").lower()
-    word_terms = [term.lower() for term in terms if " " not in term]
-    phrase_terms = [term.lower() for term in terms if " " in term]
+    # Istilah berspasi atau berkarakter non-huruf (mis. "100%") dicocokkan sebagai
+    # frasa; tanpa ini istilah seperti itu tidak pernah bisa cocok.
+    word_terms = [
+        term.lower()
+        for term in terms
+        if " " not in term and term.replace("-", "").isalpha()
+    ]
+    phrase_terms = [
+        term.lower()
+        for term in terms
+        if " " in term or not term.replace("-", "").isalpha()
+    ]
     counts: dict[str, int] = {}
 
     for token in TOKEN_RE.findall(lowered):
@@ -147,7 +132,9 @@ def count_hits(text: str, terms: tuple[str, ...] | list[str]) -> tuple[int, list
             counts[best] = counts.get(best, 0) + 1
 
     for phrase in phrase_terms:
-        found = len(re.findall(rf"\b{re.escape(phrase)}\b", lowered))
+        # Batas kata berbasis karakter kata: \b tidak berlaku untuk istilah yang
+        # diawali/diakhiri simbol seperti "100%".
+        found = len(re.findall(rf"(?<!\w){re.escape(phrase)}(?!\w)", lowered))
         if found:
             counts[phrase] = counts.get(phrase, 0) + found
 
@@ -220,13 +207,13 @@ def extract_claims(text: str, hoax_score: int) -> list[ClaimResult]:
     candidates.sort(key=lambda item: (-item[0], -len(item[1])))
     results: list[ClaimResult] = []
     for _, sentence in candidates[:3]:
-        if hoax_score >= 60:
+        if hoax_score >= VERDICT_HOAX_THRESHOLD:
             verdict = "terindikasi_menyesatkan"
             rationale = (
                 "Kalimat memuat penanda klaim yang tidak disertai atribusi sumber yang dapat "
                 "ditelusuri. Verdict ini bersifat indikatif dan wajib diverifikasi manual."
             )
-        elif hoax_score >= 35:
+        elif hoax_score >= VERDICT_VERIFY_THRESHOLD:
             verdict = "perlu_verifikasi"
             rationale = (
                 "Klaim belum memiliki bukti pendukung yang tervalidasi. Perlu pencocokan dengan "

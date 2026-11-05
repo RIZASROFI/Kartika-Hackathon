@@ -104,7 +104,6 @@ class AnalysisDetailSerializer(AnalysisListItemSerializer):
     signals = SignalOutSerializer(many=True, read_only=True)
     claims = ClaimOutSerializer(many=True, read_only=True)
     evidence = EvidenceOutSerializer(many=True, read_only=True)
-    related = serializers.SerializerMethodField()
 
     class Meta(AnalysisListItemSerializer.Meta):
         fields = (
@@ -115,34 +114,13 @@ class AnalysisDetailSerializer(AnalysisListItemSerializer):
             "limitations",
             "factcheck",
             "claim_check",
+            "decision",
             "content",
             "signals",
             "claims",
             "evidence",
-            "related",
         )
         read_only_fields = fields
-
-    def get_related(self, obj: Analysis) -> list[dict]:
-        related = []
-        for link in obj.links.all():
-            target = link.related_analysis
-            related.append(
-                {
-                    "id": str(link.related_analysis_id),
-                    "title": (
-                        target.content.title
-                        if target and target.content and target.content.title
-                        else DEFAULT_TITLE
-                    ),
-                    "verdict": target.verdict if target else "perlu_verifikasi",
-                    "risk_score": target.risk_score if target else 0,
-                    "similarity": link.similarity,
-                    "hours_apart": link.hours_apart,
-                    "shared_phrases": link.shared_phrases,
-                }
-            )
-        return related
 
 
 class AnalysisCreateSerializer(serializers.Serializer):

@@ -1,37 +1,35 @@
 # KARTIKA Intel — Digital Information Threat Intelligence Platform
 
 MVP platform intelijen ancaman informasi digital untuk tema **Kartika Cyber Hackathon 2026**.
-Membantu analis memeriksa konten yang berpotensi menyesatkan, provokatif, terkoordinasi, atau
-menunjukkan sinyal otomatisasi — dengan skor yang selalu bersifat **indikatif** dan disertai bukti
-serta batasan.
+Membantu analis memeriksa konten yang berpotensi menyesatkan — dengan skor yang selalu
+bersifat **indikatif** dan disertai bukti serta batasan.
 
 Backend memakai **Django + Django REST Framework**, frontend memakai **React + TypeScript + Vite**.
 
 ## Fitur yang sudah berjalan
 
-- **Ingest** URL artikel (Trafilatura + BeautifulSoup) atau teks manual.
-- **Ingest media sosial publik** — tautan TikTok, Instagram, Facebook, dan X/Twitter diambil
-  lewat UnifAPI: caption/teks, akun, waktu unggah, dan URL kanonis. Video/audio tidak ditranskripsi.
+- **Ingest** URL artikel (Trafilatura + BeautifulSoup) atau teks manual. Untuk postingan media
+  sosial, salin teks/caption lalu tempelkan sebagai teks manual; video/audio tidak ditranskripsi.
 - **Hoax & fact-checking signal** — atribusi sumber, sensasionalisme, tekanan menyebarkan,
   klaim numerik tanpa sumber, ekstraksi kandidat klaim.
-- **Pemeriksaan fakta eksternal** — Google Fact Check Tools API dicari untuk judul dan klaim
-  utama, hasilnya disaring relevansinya, di-cache 7 hari, dan ditampilkan sebagai panel bukti
-  pendukung (verdict heuristik tidak diubah).
+- **Sinyal model IndoBERT lokal (opsional)** — paket `backend/models/cynteltika_indobert_v1`
+  (tidak masuk git) dinilai per jendela 512 token sebagai sinyal **pembanding**. Skornya tidak
+  pernah dipakai sebagai bukti dan tidak mengubah verdict; panel detail menampilkan keduanya.
+- **Pemeriksaan fakta eksternal** — Google Fact Check Tools API dan basis data **MAFINDO
+  Yudistira** dicari untuk judul dan klaim utama, hasilnya disaring relevansinya, di-cache
+  7 hari, dan menjadi bukti bagi Evidence-Based Decision Engine.
 - **Verifikasi klaim berbasis AI (opsional)** — dua klaim utama dicari ke pencarian web terbuka
   (Exa), lalu model bahasa menilai tiap klaim **hanya** dari cuplikan yang ditemukan. Hasilnya
   status per klaim (`didukung` / `dibantah` / `tidak cukup bukti`) beserta sitasi; sitasi yang
   tidak berasal dari hasil pencarian otomatis dibuang. Nonaktif bila kunci API kosong.
-- **Provocation analysis** — leksikon kekerasan, dehumanisasi, mobilisasi, polarisasi, pola
-  ajakan eskalasi, normalisasi panjang dokumen.
-- **Coordinated activity analysis** — Jaccard similarity shingle 4-kata dalam jendela ±72 jam,
-  tautan dua arah, pembaruan skor konten lama saat konten baru cocok.
-- **Bot & AI content signals** — frasa templat model bahasa, keseragaman kalimat, tagar/mention
-  berlebih, duplikasi internal. Dibatasi karena metadata akun belum tersedia.
-- **Dashboard** — KPI, tren 14 hari, distribusi status, profil radar sinyal, peringatan
-  koordinasi, analisis terbaru.
-- **Riwayat & detail analisis** — filter status, ringkasan, empat kartu sinyal, klaim, konten
-  terkait, sumber/bukti, dan daftar batasan.
-- **Django admin** untuk inspeksi data (konten, analisis, sinyal, klaim, bukti, tautan).
+- **Evidence-Based Decision Engine (EBDE)** — verdict akhir dihitung dari bukti eksternal:
+  relevansi × kredibilitas penerbit × kebaruan, dihitung per domain independen (duplikat tidak
+  dihitung), konflik antarbukti dideteksi, dan verdict ditahan bila bukti belum cukup.
+  `risk_score` narasi disimpan terpisah dan tidak dapat menggeser verdict.
+- **Dashboard** — KPI, tren 14 hari, distribusi status, profil sinyal, analisis terbaru.
+- **Riwayat & detail analisis** — filter status, ringkasan, kartu sinyal, klaim,
+  sumber/bukti, dan daftar batasan.
+- **Django admin** untuk inspeksi data (konten, analisis, sinyal, klaim, bukti).
 
 ## Stack
 
@@ -39,12 +37,13 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 | --- | --- |
 | Backend | Python 3.12+ (diuji 3.13), Django 5.2 LTS, Django REST Framework 3.16 |
 | Ekstraksi | httpx, BeautifulSoup4, Trafilatura |
-| Media sosial | UnifAPI (TikTok, Instagram, Facebook, X/Twitter) |
+| Sinyal model | IndoBERT `cynteltika_indobert_v1` via torch (CPU) + transformers, opsional |
+| Media sosial | Teks/caption ditempel manual (tanpa pengambilan otomatis) |
 | Database | SQLite untuk MVP; siap dipindah ke PostgreSQL |
 | Admin/auth | Django admin, session auth (endpoint analisis terbuka untuk demo) |
 | Frontend | React 18, TypeScript, Vite 6, Tailwind CSS, Lucide, Recharts, React Router, TanStack Query |
 | Form & validasi | React Hook Form + Zod |
-| Pengujian | Django TestCase + DRF APITestCase (68 tes) |
+| Pengujian | Django TestCase + DRF APITestCase (111 tes) |
 
 ## Struktur proyek
 
@@ -54,16 +53,17 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 │   ├── manage.py                  # entry point Django
 │   ├── satria/                    # settings, urlconf, wsgi/asgi, logging
 │   ├── intel/
-│   │   ├── models.py              # content_items, analyses, signals, claims, evidence, links
+│   │   ├── models.py              # content_items, analyses, signals, claims, evidence
 │   │   ├── serializers.py         # kontrak JSON untuk React
 │   │   ├── views.py               # API, health, penyajian SPA
 │   │   ├── urls.py
 │   │   ├── admin.py
-│   │   ├── analysis/              # mesin heuristik framework-agnostic
+│   │   ├── analysis/              # heuristik, sinyal IndoBERT, EBDE (framework-agnostic)
 │   │   ├── services/              # analisis, ekstraksi, dashboard, build frontend
 │   │   ├── management/commands/   # runserver, build_frontend
 │   │   ├── migrations/
 │   │   └── tests/
+│   ├── models/                    # bobot IndoBERT lokal (di luar git, ~476 MB)
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -145,7 +145,7 @@ lalu refresh <http://127.0.0.1:8000>.
 python manage.py migrate              # terapkan migrasi
 python manage.py build_frontend       # build React ke frontend/dist
 python manage.py createsuperuser      # akun admin
-python manage.py test                 # 68 tes
+python manage.py test                 # 111 tes
 ```
 
 ## Konfigurasi backend
@@ -159,9 +159,11 @@ python manage.py test                 # 68 tes
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Origin Vite saat mode dev |
 | `FETCH_TIMEOUT_SECONDS` | `15` | Timeout pengambilan artikel |
 | `MAX_CONTENT_CHARS` | `60000` | Batas teks yang disimpan/dianalisis |
-| `COORDINATION_SIMILARITY_THRESHOLD` | `0.28` | Ambang Jaccard pasangan narasi |
-| `COORDINATION_WINDOW_HOURS` | `72` | Jendela waktu perbandingan |
-| `COORDINATION_MIN_CORPUS` | `3` | Minimum korpus agar keyakinan koordinasi penuh |
+| `INDOBERT_ENABLED` | `true` | Sinyal model lokal; nonaktif otomatis bila artefak model tidak ada atau saat `manage.py test` |
+| `INDOBERT_MODEL_DIR` | `backend/models/cynteltika_indobert_v1` | Lokasi paket model (di luar git) |
+| `INDOBERT_MAX_TOKENS` | `512` | Panjang jendela token per potongan teks |
+| `INDOBERT_MAX_CHUNKS` | `4` | Jumlah jendela yang dinilai per analisis (pembatas waktu) |
+| `INDOBERT_BATCH_SIZE` | `4` | Jendela per batch inference |
 | `FACTCHECK_ENABLED` | `true` | Nonaktif otomatis bila API key kosong atau saat `manage.py test` |
 | `GOOGLE_FACTCHECK_API_KEY` | — | API key Google Fact Check Tools (aktifkan API-nya di Google Cloud Console) |
 | `FACTCHECK_TIMEOUT_SECONDS` | `6` | Timeout panggilan pemeriksaan fakta |
@@ -170,16 +172,20 @@ python manage.py test                 # 68 tes
 | `FACTCHECK_CACHE_TTL_HOURS` | `168` | Umur cache respons di tabel `factcheck_queries` |
 | `FACTCHECK_MIN_OVERLAP` | `0.45` | Ambang porsi kata klaim yang harus muncul di konten |
 | `FACTCHECK_LANGUAGE_CODE` | kosong | Batasi bahasa ulasan (`id`); kosong = semua bahasa |
+| `MAFINDO_ENABLED` | `true` | Cek fakta MAFINDO/Yudistira; nonaktif otomatis bila key kosong atau saat `manage.py test` |
+| `MAFINDO_API_KEY` | — | API key MAFINDO Public API v2 (diminta ke tim MAFINDO) |
+| `MAFINDO_BASE_URL` | `https://yudistira.turnbackhoax.id/api` | Base URL Yudistira; tanpa trailing slash (server membalas 403) |
+| `MAFINDO_TIMEOUT_SECONDS` | `8` | Timeout panggilan MAFINDO |
+| `MAFINDO_PAGE_SIZE` | `5` | Kandidat artikel cek fakta per kueri |
+| `MAFINDO_MAX_QUERIES` | `2` | Jumlah kata kunci MAFINDO per analisis (hemat kuota) |
 | `AI_CLAIM_CHECK_ENABLED` | `true` | Verifikasi klaim berbasis AI; nonaktif otomatis saat `manage.py test` |
 | `EXA_API_KEY` | — | Kunci pencarian web Exa; verifikasi klaim nonaktif bila kosong |
 | `EXA_RESULTS_PER_CLAIM` | `3` | Jumlah sumber yang diambil per klaim |
 | `CLAIM_CHECK_MAX_CLAIMS` | `2` | Klaim yang diverifikasi per analisis (hemat kuota) |
 | `LLM_ENABLED` | `false` | Wajib `true` agar verifikasi klaim berjalan |
+| `CLAIM_MATCH_ENABLED` | `true` | Pencocokan klaim temuan cek fakta dengan konten; nonaktif otomatis saat `manage.py test` |
 | `LLM_API_KEY`, `LLM_MODEL` | — | Kunci dan nama model bahasa |
 | `LLM_BASE_URL` | `https://api.groq.com/openai/v1` | Endpoint kompatibel OpenAI (Groq, Gemini, OpenRouter, Ollama) |
-| `UNIFAPI_API_KEY` | — | Kunci UnifAPI untuk ingest TikTok/Instagram/Facebook/X; tanpa kunci, URL media sosial ditolak dengan pesan agar teks ditempel manual |
-| `UNIFAPI_BASE_URL` | `https://api.unifapi.com` | Endpoint UnifAPI |
-| `SOCIAL_FETCH_TIMEOUT_SECONDS` | `15` | Timeout pengambilan satu postingan media sosial |
 
 ### Pindah ke PostgreSQL
 
@@ -196,8 +202,8 @@ Django tetap memakai `manage.py`; tidak ada Alembic/SQLAlchemy pada versi ini.
 | --- | --- | --- |
 | `POST` | `/api/v1/analyses` | Analisis `{ "url": ... }` (artikel atau postingan TikTok/Instagram/Facebook/X) atau `{ "text": ..., "title"?, "publisher"? }` |
 | `GET` | `/api/v1/analyses` | Riwayat; filter `verdict`, `category`; `limit` (1–100), `offset` |
-| `GET` | `/api/v1/analyses/{id}` | Detail sinyal, klaim, bukti, konten terkait |
-| `DELETE` | `/api/v1/analyses/{id}` | Hapus satu analisis beserta sinyal, klaim, bukti, dan tautan koordinasinya |
+| `GET` | `/api/v1/analyses/{id}` | Detail sinyal, klaim, bukti, dan jejak keputusan EBDE (`decision`) |
+| `DELETE` | `/api/v1/analyses/{id}` | Hapus satu analisis beserta sinyal, klaim, dan buktinya |
 | `POST` | `/api/v1/analyses/bulk-delete` | Hapus beberapa analisis sekaligus `{ "ids": [...] }` (maks 200) |
 | `GET` | `/api/v1/dashboard/summary` | Agregasi dashboard 14 hari |
 | `GET` | `/health` | Status layanan |
@@ -219,27 +225,62 @@ curl -X POST http://127.0.0.1:8000/api/v1/analyses \
 
 ## Model penilaian
 
-Empat sinyal diskalakan 0–100 dengan bobot:
+Analisis menyimpan **dua keluaran yang tidak saling menggantikan**:
 
-| Dimensi | Bobot |
-| --- | --- |
-| Hoax & fakta | 35% |
-| Provokasi | 30% |
-| Koordinasi | 20% |
-| Bot & AI | 15% |
+| Keluaran | Sumber | Arti |
+| --- | --- | --- |
+| `risk_score` 0–100 | sinyal heuristik (IndoBERT hanya pembanding) | pola penyebaran: atribusi lemah, sensasionalisme, tekanan menyebarkan |
+| `verdict` | Evidence-Based Decision Engine (EBDE) | status klaim berdasarkan bukti eksternal |
 
-Skor risiko = **65% sinyal terkuat + 35% rata-rata berbobot**. Tingkat risiko: rendah 0–24,
-sedang 25–49, tinggi 50–74, kritis 75–100.
+Tingkat risiko: rendah 0–24, sedang 25–49, tinggi 50–74, kritis 75–100.
 
-Status analisis dipilih berurutan: indikasi terkoordinasi (≥2 konten mirip dan skor koordinasi
-≥60) → terindikasi hoax (hoax ≥60) → provokatif (provokasi ≥60) → perlu verifikasi →
-terindikasi fakta.
+Sinyal narasi tidak pernah menjadi bukti. Verdict hanya ditetapkan EBDE dari temuan cek fakta dan
+sitasi pencarian, dengan tiap bukti diberi bobot:
+
+- **relevansi** — porsi kata penting bukti yang muncul pada klaim/konten;
+- **kredibilitas** — lembaga cek fakta 0,95; media mapan 0,85; domain pemerintah/kepolisian/
+  akademik 0,80; media populer 0,70; platform UGC (blogspot/wordpress/medium/media sosial)
+  0,30; domain lain 0,50;
+- **kebaruan** — peluruhan eksponensial paruh 365 hari, 0,60 bila tanggal tidak diketahui;
+- **independensi** — dihitung per domain memakai artikel terkuat, URL duplikat dibuang.
+
+Bobot bukti = relevansi × kredibilitas × kebaruan. Status klaim dari model bahasa tidak dihitung
+sebagai bukti tambahan: tiap URL sitasi menjadi satu item bukti, dan satu artikel cek fakta boleh
+berdiri sendiri hanya bila kredibilitasnya ≥0,90 dan relevansinya ≥0,60.
+
+Sebelum menimbang, tiap temuan cek fakta dicocokkan ke konten oleh model bahasa: **sama**,
+**berbeda**, atau **tidak jelas**. Temuan untuk pernyataan lain (mis. pemeriksa fakta membantah
+klaim “PN Surakarta menyatakan ijazah Jokowi palsu”, sedangkan konten melaporkan “Jokowi bersaksi
+di PN Jakarta Timur”) disimpan sebagai **konteks** dan tidak menambah bobot maupun domain. Model
+tidak menilai benar/salah; bila `CLAIM_MATCH_ENABLED=false` atau model gagal, pencocokan kata
+lama dipakai dan statusnya tercatat di `decision.provider_status.claim_match`.
+
+Verdict: **Terindikasi Fakta** / **Terindikasi Hoaks** bila sisi dominan ≥0,60 dan ≥70% bobot;
+bila tidak ada sisi pembanding, ≥2 domain independen dengan bobot ≥0,40 sudah memutuskan;
+**Campuran** bila kedua sisi ≥0,30 dan sisi lemah ≥50% sisi kuat; **Perlu Verifikasi** bila bukti
+tipis atau tidak konvergen; **Belum Dapat Dinilai** bila tidak ada bukti. Alasan penahanan
+disimpan di `decision.insufficient_reason`.
+
+Bobot sinyal risiko (bukan bukti): tanpa atribusi yang dapat ditelusuri (+20), sumber kabur seperti “kabarnya”
+atau “orang dalam” (+9 per frasa, maks 27), bahasa sensasional (maks 18), tekanan menyebarkan
+(maks 24), pernyataan absolut (maks 10), angka tanpa atribusi (+12), tanpa rujukan lembaga
+resmi (+10), serta otoritas semu — nama lembaga tanpa pernyataan resmi (+10). Atribusi yang
+dapat ditelusuri (dilansir/pernyataan/juru bicara) dan rujukan lembaga menurunkan skor, dan
+kata seperti “menurut” tanpa pihak konkret tidak dihitung sebagai atribusi.
 
 - Jika `GOOGLE_FACTCHECK_API_KEY` diisi, judul artikel dan maksimal dua klaim hasil ekstraksi
   dikirim ke Google Fact Check Tools API. Hasil dengan tumpang tindih kata rendah dibuang.
   Temuan disimpan di `Analysis.factcheck` dan sebagai `Evidence` berjenis `factcheck`.
-- Sesuai prinsip retrieval, hasil pemeriksaan fakta **tidak mengubah verdict**. Ia hanya
-  memberi konteks, digabung ke daftar batasan, dan dapat diaudit analis.
+- Jika `MAFINDO_API_KEY` diisi, konten juga dicari ke MAFINDO Yudistira
+  (`POST /antihoax/search`, key di body form). Pencarian MAFINDO mencocokkan **frasa utuh**
+  (`ekspor gas` cocok, `gas singapura` tidak), jadi tiap kueri berupa satu kata kunci: nama diri
+  didahulukan, sisanya kata terpanjang tanpa kata fungsi (maks `MAFINDO_MAX_QUERIES`).
+  Judul artikel cek fakta dipakai sebagai klaim, dan tautan artikelnya diambil dari
+  `claim_review` (dengan `references` sebagai cadangan).
+- Kedua provider dijalankan terpisah: kegagalan satu provider (kuota, key salah, jaringan)
+  tidak menghapus temuan provider lain, dan status gabungan tetap `matched` bila ada temuan.
+- Hasil pemeriksaan fakta dan sitasi model menjadi **bukti** bagi EBDE, bukan verdict langsung:
+  satu artikel tidak cukup untuk memutuskan, dan tiap item dapat diaudit analis.
 - Kegagalan API (kuota, jaringan, key salah) tidak menggagalkan analisis: status menjadi
   `unavailable` dan catatan batasan diganti sesuai kondisi.
 
@@ -249,15 +290,21 @@ Detail metode dan batasan tersedia di halaman **Metodologi** pada aplikasi.
 
 - Pemeriksaan fakta eksternal hanya mencakup klaim yang sudah diperiksa pihak lain; konten baru
   tidak akan punya catatan, dan ketiadaan catatan bukan bukti kebenaran.
+- Pencarian MAFINDO memakai kata kunci pendek (endpoint `content` mencocokkan frasa utuh),
+  sehingga klaim yang diparafrase tetap bisa terlewat. Kunci API MAFINDO dikirim di body
+  form, jadi jaga kerahasiaan `backend/.env`.
 - Status klaim berbasis AI adalah pembacaan model terhadap cuplikan sumber, bukan putusan fakta.
   Tanpa sitasi yang valid statusnya diturunkan menjadi “tidak cukup bukti”, dan setiap sitasi
   tetap wajib dibuka analis.
-- Ingest media sosial hanya membaca postingan **publik** dan hanya caption/teksnya; video dan audio
-  tidak ditranskripsi, dan kegagalan penyedia mengembalikan `422`/`502` tanpa analisis parsial.
-- Ingest media sosial menambah biaya per record di UnifAPI dan tidak menelusuri akun lain yang
-  menyebarkan konten yang sama; tautan pendek di luar domain platform harus dibuka dulu.
-- Sinyal bot/AI hanya berbasis teks karena metadata akun belum tersedia.
+- URL media sosial (TikTok, Instagram, Facebook, X/Twitter) tidak di-ingest otomatis; tempelkan
+  teks/caption-nya sebagai teks manual agar analisis berjalan.
 - Leksikon dapat melewatkan sarkasme, kutipan berita, atau konteks budaya.
+- Kesetaraan klaim dinilai model bahasa, sehingga temuan yang membahas klaim lain bisa lolos atau
+  justru ditandai konteks secara keliru; analis tetap harus membuka tautan cek fakta.
+- Kredibilitas penerbit berasal dari tabel heuristik; domain tak dikenal dinilai 0,50 dan domain
+  pemerintah 0,80, sehingga penilaian bisa meleset untuk penerbit niche.
+- Independensi dihitung per domain, sehingga sindikasi (satu rilis dikutip banyak media) dapat
+  terhitung sebagai beberapa sumber independen.
 - Kemiripan teks bukan bukti aktor yang sama (bisa karena sindikasi berita).
 - Endpoint analisis sengaja terbuka untuk demo; gunakan autentikasi/token sebelum produksi.
 - Keputusan akhir selalu berada pada analis manusia.
@@ -269,10 +316,9 @@ Migrasi berjalan otomatis dan database dimulai kosong tanpa data contoh.
 
 ## Langkah berikutnya
 
-1. Pakai LLM juga untuk ringkasan naratif dan penalaran verdict (saat ini AI hanya memberi status
-   per klaim; verdict tetap heuristik).
+1. Pakai LLM untuk merangkum bukti EBDE dan menyusun narasi analis (verdict tetap ditetapkan
+   EBDE, bukan oleh model bahasa).
 2. Proteksi API dengan token/session auth dan peran analis/supervisor.
 3. Impor batch CSV/JSON untuk metadata akun dan waktu unggah.
-4. Integrasi MAFINDO/Yudistira API sebagai sumber pemeriksaan fakta lokal, di samping Google.
-5. Ekspor laporan investigasi (PDF/DOCX) dan notifikasi klaster baru.
-6. Deployment produksi: `DEBUG=false`, `collectstatic`, WhiteNoise/Gunicorn, PostgreSQL.
+4. Ekspor laporan investigasi (PDF/DOCX) dan notifikasi klaster baru.
+5. Deployment produksi: `DEBUG=false`, `collectstatic`, WhiteNoise/Gunicorn, PostgreSQL.

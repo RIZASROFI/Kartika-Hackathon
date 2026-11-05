@@ -5,7 +5,7 @@ from uuid import uuid4
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from intel.models import Analysis, ContentItem, CoordinationLink
+from intel.models import Analysis, ContentItem
 
 SAMPLE_TEXT = (
     "Bantuan sosial Rp 5 juta untuk semua warga bisa diambil lewat link berikut. "
@@ -45,14 +45,19 @@ class ApiTests(APITestCase):
         self.assertIn(
             payload["verdict"],
             {
-                "terkoordinasi",
-                "terindikasi_menyesatkan",
-                "provokatif",
+                "terindikasi_fakta",
+                "terindikasi_hoaks",
+                "campuran",
                 "perlu_verifikasi",
-                "risiko_rendah",
+                "belum_dapat_dinilai",
             },
         )
-        self.assertEqual(len(payload["signals"]), 4)
+        # Keputusan EBDE ikut terserialisasi dan tidak bergantung pada risk score.
+        self.assertEqual(payload["decision"]["verdict"], payload["verdict"])
+        self.assertEqual(payload["decision"]["engine"], "ebde-1.0")
+        self.assertEqual(payload["decision"]["narrative_risk"], payload["risk_score"])
+        self.assertEqual(len(payload["signals"]), 1)
+        self.assertEqual(payload["signals"][0]["category"], "hoax")
         self.assertTrue(payload["claims"])
         self.assertEqual(payload["evidence"][0]["kind"], "input_pengguna")
         self.assertEqual(payload["content"]["source_type"], "text")
@@ -71,6 +76,15 @@ class ApiTests(APITestCase):
         response = self.client.post("/api/v1/analyses", {}, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("url", response.json()["detail"].lower())
+
+    def test_social_url_is_rejected_with_manual_text_hint(self) -> None:
+        response = self.client.post(
+            "/api/v1/analyses",
+            {"url": "https://www.instagram.com/p/DfHiFB1Eueo/"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("Teks manual", response.json()["detail"])
 
     def test_ssrf_is_blocked(self) -> None:
         response = self.client.post(
@@ -114,22 +128,6 @@ class ApiTests(APITestCase):
         self.assertTrue(Analysis.objects.filter(pk=second["id"]).exists())
         self.assertEqual(ContentItem.objects.count(), 1)
 
-    def test_delete_analysis_cascades_coordination_links(self) -> None:
-        self.client.post(
-            "/api/v1/analyses", {"text": SAMPLE_TEXT, "title": "Pesan A"}, format="json"
-        )
-        second = self.client.post(
-            "/api/v1/analyses",
-            {"text": NEAR_DUPLICATE_TEXT, "title": "Pesan B"},
-            format="json",
-        ).json()
-        self.assertEqual(CoordinationLink.objects.count(), 2)
-
-        response = self.client.delete(f"/api/v1/analyses/{second['id']}")
-        self.assertEqual(response.status_code, 204)
-        self.assertEqual(CoordinationLink.objects.count(), 0)
-        self.assertEqual(Analysis.objects.count(), 1)
-
     def test_delete_unknown_analysis_is_404(self) -> None:
         self.assertEqual(
             self.client.delete(f"/api/v1/analyses/{uuid4()}").status_code, 404
@@ -157,7 +155,6 @@ class ApiTests(APITestCase):
         self.assertEqual(response.json()["deleted"], 2)
         self.assertEqual(Analysis.objects.count(), 0)
         self.assertEqual(ContentItem.objects.count(), 0)
-        self.assertEqual(CoordinationLink.objects.count(), 0)
 
     def test_bulk_delete_validates_payload(self) -> None:
         for payload in ({}, {"ids": []}, {"ids": "bukan-daftar"}, {"ids": ["bukan-uuid"]}):
@@ -166,33 +163,6 @@ class ApiTests(APITestCase):
             )
             self.assertEqual(response.status_code, 400, payload)
             self.assertIsInstance(response.json()["detail"], str)
-
-    def test_duplicate_analysis_creates_coordination_links(self) -> None:
-        first = self.client.post(
-            "/api/v1/analyses", {"text": SAMPLE_TEXT, "title": "Pesan A"}, format="json"
-        )
-        self.assertEqual(first.status_code, 201)
-        second = self.client.post(
-            "/api/v1/analyses",
-            {"text": NEAR_DUPLICATE_TEXT, "title": "Pesan B"},
-            format="json",
-        )
-        self.assertEqual(second.status_code, 201)
-        payload = second.json()
-        self.assertTrue(payload["related"], "konten mirip harus tertaut")
-        self.assertGreater(payload["related"][0]["similarity"], 0.5)
-
-        first_detail = self.client.get(f"/api/v1/analyses/{first.json()['id']}").json()
-        self.assertTrue(
-            first_detail["related"], "konten lama ikut diperbarui skor koordinasinya"
-        )
-        coordination = next(
-            signal
-            for signal in first_detail["signals"]
-            if signal["category"] == "coordination"
-        )
-        self.assertGreaterEqual(coordination["score"], 50)
-        self.assertEqual(CoordinationLink.objects.count(), 2)
 
     def test_list_filter_by_verdict(self) -> None:
         self.client.post(
@@ -217,7 +187,8 @@ class ApiTests(APITestCase):
         self.assertEqual(summary["totals"]["analyses"], 1)
         self.assertGreaterEqual(summary["totals"]["claims"], 1)
         self.assertEqual(len(summary["risk_trend"]), 14)
-        self.assertEqual(len(summary["category_scores"]), 4)
+        self.assertEqual(len(summary["category_scores"]), 1)
+        self.assertEqual(summary["category_scores"][0]["category"], "hoax")
         self.assertEqual(summary["recent_analyses"][0]["title"], "Bansos")
 
     def test_unknown_api_is_json_404(self) -> None:

@@ -2,13 +2,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ArrowRight,
-  Bot,
   FileText,
-  Flame,
   Info,
   Link2,
   Loader2,
-  Network,
   Newspaper,
   ScanLine,
   ShieldAlert,
@@ -60,15 +57,16 @@ const schema = z
 type FormValues = z.infer<typeof schema>;
 
 const MODES = [
-  { value: "url" as const, label: "URL / postingan", icon: Link2 },
+  { value: "url" as const, label: "URL artikel", icon: Link2 },
   { value: "text" as const, label: "Teks manual", icon: FileText },
 ];
 
 const ANALYSIS_AREAS = [
-  { icon: Newspaper, label: "Hoaks & fakta", text: "Atribusi sumber dan tekanan menyebarkan." },
-  { icon: Flame, label: "Provokasi", text: "Leksikon eskalasi dan polarisasi." },
-  { icon: Network, label: "Koordinasi", text: "Kemiripan narasi dan kedekatan waktu." },
-  { icon: Bot, label: "Bot & AI", text: "Pola templat dan keseragaman kalimat." },
+  {
+    icon: Newspaper,
+    label: "Hoaks & fakta",
+    text: "Atribusi sumber, sensasionalisme, dan tekanan menyebarkan.",
+  },
 ];
 
 export default function NewAnalysis() {
@@ -117,9 +115,8 @@ export default function NewAnalysis() {
         <p className="label">Ingest & analyze</p>
         <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-white">Analisis Konten</h1>
         <p className="mt-1.5 max-w-2xl text-sm text-slate-400">
-          Tempelkan URL artikel, tautan postingan TikTok/Instagram/Facebook/X, atau teks mentah.
-          Mesin akan mengekstrak isi, menghitung empat dimensi sinyal, dan menyusun laporan
-          indikatif.
+          Tempelkan URL artikel atau teks mentah. Mesin akan mengekstrak isi, menghitung sinyal
+          hoaks & fakta, dan menyusun laporan indikatif.
         </p>
       </div>
 
@@ -168,7 +165,7 @@ export default function NewAnalysis() {
                   id="url"
                   type="url"
                   inputMode="url"
-                  placeholder="https://contoh.id/artikel atau https://x.com/akun/status/123…"
+                  placeholder="https://contoh.id/artikel…"
                   className={cn("input mt-2", errors.url && "border-rose-400/50")}
                   aria-invalid={Boolean(errors.url)}
                   {...register("url")}
@@ -177,8 +174,8 @@ export default function NewAnalysis() {
                   <p className="mt-1.5 text-xs text-rose-300">{errors.url.message}</p>
                 ) : (
                   <p className="mt-1.5 text-xs text-slate-500">
-                    Artikel dibaca langsung. Tautan TikTok, Instagram, Facebook, dan X diambil
-                    lewat UnifAPI (caption, akun, waktu unggah). Host internal diblokir.
+                    Artikel dibaca langsung. Untuk postingan media sosial, salin teks atau
+                    caption-nya lalu gunakan mode Teks manual. Host internal diblokir.
                   </p>
                 )}
               </div>
@@ -204,8 +201,7 @@ export default function NewAnalysis() {
                   <p className="mt-1.5 text-xs text-rose-300">{errors.text.message}</p>
                 ) : (
                   <p className="mt-1.5 text-xs text-slate-500">
-                    Minimal 8 kata. Untuk analisis koordinasi, tambahkan beberapa konten serupa
-                    secara berurutan.
+                    Minimal 8 kata agar analisis memiliki cukup sinyal.
                   </p>
                 )}
               </div>
@@ -273,7 +269,7 @@ export default function NewAnalysis() {
           <Card>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-cyan-300" />
-              <h2 className="text-sm font-semibold text-white">Empat dimensi analisis</h2>
+              <h2 className="text-sm font-semibold text-white">Dimensi analisis</h2>
             </div>
             <ul className="mt-4 space-y-4">
               {ANALYSIS_AREAS.map((area) => {
@@ -300,9 +296,9 @@ export default function NewAnalysis() {
             </div>
             <p className="mt-2 text-xs leading-relaxed text-amber-100/60">
               Klaim dicocokkan ke pemeriksaan fakta Google dan sumber terbuka Exa, lalu dinilai
-              Gemini dari cuplikan tersebut. Untuk media sosial hanya caption/teks yang
+              Gemini dari cuplikan tersebut. Untuk media sosial hanya teks yang ditempel
               dianalisis, bukan video atau audionya, dan metadata akun tetap tidak dibaca.
-              Skor tinggi berarti perlu ditinjau, bukan otomatis salah atau buatan AI.
+              Skor tinggi berarti perlu ditinjau, bukan otomatis salah.
             </p>
           </div>
 
@@ -313,12 +309,11 @@ export default function NewAnalysis() {
             </div>
             <ol className="mt-3 space-y-2 text-xs text-slate-500">
               <li>01 · Validasi sumber & proteksi SSRF</li>
-              <li>02 · Ekstraksi artikel atau postingan media sosial (UnifAPI)</li>
-              <li>03 · Analisis heuristik empat dimensi</li>
-              <li>04 · Pencocokan narasi dengan korpus tersimpan</li>
-              <li>05 · Pemeriksaan fakta (Google Fact Check Tools)</li>
-              <li>06 · Verifikasi klaim (Exa + Gemini)</li>
-              <li>07 · Penyimpanan temuan, sitasi & bukti</li>
+              <li>02 · Ekstraksi artikel</li>
+              <li>03 · Analisis heuristik hoaks &amp; fakta</li>
+              <li>04 · Pemeriksaan fakta (Google Fact Check Tools)</li>
+              <li>05 · Verifikasi klaim (Exa + Gemini)</li>
+              <li>06 · Penyimpanan temuan, sitasi & bukti</li>
             </ol>
           </div>
         </div>

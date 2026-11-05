@@ -60,6 +60,9 @@ class Analysis(models.Model):
     limitations = models.JSONField(default=list, blank=True)
     factcheck = models.JSONField(default=dict, blank=True)
     claim_check = models.JSONField(default=dict, blank=True)
+    # Jejak keputusan Evidence-Based Decision Engine: verdict, bobot tiap sisi,
+    # dan penilaian per bukti (relevansi, kredibilitas, kebaruan, independensi).
+    decision = models.JSONField(default=dict, blank=True)
     processing_ms = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
@@ -167,32 +170,3 @@ class FactCheckQuery(models.Model):
 
     def __str__(self) -> str:
         return self.query_text[:80]
-
-
-class CoordinationLink(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    analysis = models.ForeignKey(
-        Analysis, on_delete=models.CASCADE, related_name="links"
-    )
-    related_analysis = models.ForeignKey(
-        Analysis, on_delete=models.CASCADE, related_name="incoming_links"
-    )
-    similarity = models.FloatField()
-    hours_apart = models.FloatField(blank=True, null=True)
-    shared_phrases = models.JSONField(default=list, blank=True)
-    created_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        db_table = "coordination_links"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["analysis", "related_analysis"], name="uq_coordination_pair"
-            )
-        ]
-        indexes = [
-            models.Index(fields=["analysis"], name="ix_link_analysis"),
-            models.Index(fields=["related_analysis"], name="ix_link_related"),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.analysis_id} ~ {self.related_analysis_id} ({self.similarity:.0%})"

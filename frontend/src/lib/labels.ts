@@ -1,10 +1,4 @@
-import {
-  Bot,
-  Flame,
-  Newspaper,
-  Network,
-  type LucideIcon,
-} from "lucide-react";
+import { BrainCircuit, Newspaper, type LucideIcon } from "lucide-react";
 
 import type { RiskLevel, SignalCategory, Verdict } from "./types";
 
@@ -18,44 +12,68 @@ export interface VerdictMeta {
 }
 
 export const VERDICT_META: Record<Verdict, VerdictMeta> = {
-  terkoordinasi: {
-    label: "Indikasi aktivitas terkoordinasi",
-    short: "Terkoordinasi",
-    description: "Narasi serupa tersebar berdekatan waktu melalui beberapa kanal.",
-    badge: "border-fuchsia-400/30 bg-fuchsia-400/10 text-fuchsia-300",
-    dot: "bg-fuchsia-400",
-    hex: "#e879f9",
+  terindikasi_fakta: {
+    label: "Terindikasi Fakta",
+    short: "Terindikasi fakta",
+    description:
+      "Bukti independen secara dominan mendukung klaim, dengan bobot di atas ambang keputusan.",
+    badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+    dot: "bg-emerald-400",
+    hex: "#34d399",
   },
-  terindikasi_menyesatkan: {
-    label: "Terindikasi Hoax",
-    short: "Terindikasi Hoax",
-    description: "Kelemahan atribusi dan pola amplifikasi mengarah pada indikasi hoax.",
+  terindikasi_hoaks: {
+    label: "Terindikasi Hoaks",
+    short: "Terindikasi hoaks",
+    description:
+      "Bukti independen secara dominan membantah klaim. Tetap indikasi berbasis bukti, bukan putusan hukum.",
     badge: "border-rose-400/30 bg-rose-400/10 text-rose-300",
     dot: "bg-rose-400",
     hex: "#fb7185",
   },
-  provokatif: {
-    label: "Provokatif",
-    short: "Provokatif",
-    description: "Mengandung ajakan, ancaman, atau bahasa yang memicu eskalasi.",
+  campuran: {
+    label: "Campuran",
+    short: "Campuran",
+    description:
+      "Sebagian klaim didukung dan sebagian dibantah, atau pemeriksa fakta menilai klaim hanya sebagian benar.",
     badge: "border-orange-400/30 bg-orange-400/10 text-orange-300",
     dot: "bg-orange-400",
     hex: "#fb923c",
   },
   perlu_verifikasi: {
-    label: "Perlu verifikasi",
+    label: "Perlu Verifikasi",
     short: "Perlu verifikasi",
-    description: "Ada sinyal risiko yang belum cukup untuk menyimpulkan status klaim.",
+    description:
+      "Bukti yang ada belum cukup atau belum konvergen; status klaim belum dapat ditetapkan.",
     badge: "border-amber-400/30 bg-amber-400/10 text-amber-300",
     dot: "bg-amber-400",
     hex: "#fbbf24",
   },
+  belum_dapat_dinilai: {
+    label: "Belum Dapat Dinilai",
+    short: "Belum dinilai",
+    description:
+      "Belum ada bukti eksternal yang dapat dinilai (layanan tidak aktif, gagal dihubungi, atau tanpa catatan). Mesin tidak menebak.",
+    badge: "border-slate-400/20 bg-slate-400/10 text-slate-300",
+    dot: "bg-slate-400",
+    hex: "#94a3b8",
+  },
+  // Format lama: hanya muncul pada analisis yang dibuat sebelum engine EBDE.
+  terindikasi_menyesatkan: {
+    label: "Terindikasi Hoax (format lama)",
+    short: "Hoax (lama)",
+    description:
+      "Verdict heuristik sebelum EBDE. Analisis lama tidak memiliki jejak bukti terstruktur.",
+    badge: "border-rose-400/20 bg-rose-400/[0.06] text-rose-300/80",
+    dot: "bg-rose-400/60",
+    hex: "#fb7185",
+  },
   risiko_rendah: {
-    label: "Terindikasi Fakta",
-    short: "Terindikasi Fakta",
-    description: "Tidak ditemukan indikasi hoax yang kuat; konten terindikasi mengarah pada fakta.",
-    badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
-    dot: "bg-emerald-400",
+    label: "Tanpa indikasi hoax (format lama)",
+    short: "Risiko rendah (lama)",
+    description:
+      "Verdict heuristik sebelum EBDE; bukan berarti isi sudah terverifikasi sebagai fakta.",
+    badge: "border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-300/80",
+    dot: "bg-emerald-400/60",
     hex: "#34d399",
   },
 };
@@ -97,34 +115,41 @@ export const CATEGORY_META: Record<SignalCategory, CategoryMeta> = {
     icon: Newspaper,
     hex: "#38bdf8",
   },
-  provocation: {
-    label: "Provokasi",
-    description: "Leksikon kekerasan, polarisasi, dan ajakan eskalasi.",
-    icon: Flame,
-    hex: "#fb923c",
-  },
-  coordination: {
-    label: "Koordinasi",
-    description: "Kemiripan narasi dan kedekatan waktu publikasi.",
-    icon: Network,
-    hex: "#e879f9",
-  },
-  bot_ai: {
-    label: "Bot & AI",
-    description: "Pola templat, keseragaman kalimat, dan penanda konten generatif.",
-    icon: Bot,
+  indobert: {
+    label: "Model IndoBERT",
+    description: "Klasifikasi probabilistik model IndoBERT lokal sebagai pembanding.",
+    icon: BrainCircuit,
     hex: "#a78bfa",
   },
 };
 
 export const VERDICT_FILTERS: Array<{ value: Verdict | null; label: string }> = [
   { value: null, label: "Semua" },
-  { value: "terkoordinasi", label: "Terkoordinasi" },
-  { value: "terindikasi_menyesatkan", label: "Terindikasi Hoax" },
-  { value: "provokatif", label: "Provokatif" },
-  { value: "perlu_verifikasi", label: "Perlu verifikasi" },
-  { value: "risiko_rendah", label: "Terindikasi Fakta" },
+  { value: "terindikasi_hoaks", label: "Terindikasi Hoaks" },
+  { value: "terindikasi_fakta", label: "Terindikasi Fakta" },
+  { value: "campuran", label: "Campuran" },
+  { value: "perlu_verifikasi", label: "Perlu Verifikasi" },
+  { value: "belum_dapat_dinilai", label: "Belum Dapat Dinilai" },
 ];
+
+export const DECISION_STANCE_META: Record<string, { label: string; badge: string }> = {
+  mendukung: {
+    label: "Mendukung",
+    badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  },
+  membantah: {
+    label: "Membantah",
+    badge: "border-rose-400/30 bg-rose-400/10 text-rose-300",
+  },
+  sebagian: {
+    label: "Sebagian benar",
+    badge: "border-amber-400/30 bg-amber-400/10 text-amber-300",
+  },
+  netral: {
+    label: "Konteks",
+    badge: "border-slate-400/20 bg-slate-400/10 text-slate-300",
+  },
+};
 
 export const CLAIM_VERDICT_META: Record<string, { label: string; badge: string }> = {
   terindikasi_menyesatkan: {

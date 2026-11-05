@@ -1,31 +1,29 @@
-"""Layanan pembuatan analisis, korelasi koordinasi, dan penyimpanan temuan."""
+"""Layanan pembuatan analisis dan penyimpanan temuan."""
 
 from __future__ import annotations
 
 import hashlib
 import logging
 import time
-import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
+from urllib.parse import urlparse
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from intel.analysis.coordination import (
-    CoordinationCandidate,
-    CoordinationMatch,
-    score_from_matches,
-)
-from intel.analysis.pipeline import ENGINE_VERSION, assess_signals, run_analysis
-from intel.analysis.text_stats import SignalResult, normalize_whitespace, word_count
+from intel.analysis.ebde import assess_evidence, build_evidence_items
+from intel.analysis.pipeline import ENGINE_VERSION, apply_decision, run_analysis
+from intel.analysis.text_stats import normalize_whitespace, word_count
 from intel.models import (
     Analysis,
     AnalysisSignal,
     Claim,
     ContentItem,
-    CoordinationLink,
     Evidence,
+)
+from intel.services.claim_match import (
+    CLAIM_MATCH_LIMITATION,
+    align_factcheck_hits,
 )
 from intel.services.claim_verification import (
     ClaimCheckResult,
@@ -34,24 +32,34 @@ from intel.services.claim_verification import (
 )
 from intel.services.extraction import ExtractedArticle, ExtractionError, extract_article
 from intel.services.factcheck import FactCheckResult, apply_limitation, run_factcheck
-from intel.services.social import detect_platform, fetch_social_post
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TITLE = "Konten tanpa judul"
-MAX_CANDIDATES = 300
+SOCIAL_HOSTS = (
+    "tiktok.com",
+    "instagram.com",
+    "instagr.am",
+    "facebook.com",
+    "fb.com",
+    "fb.watch",
+    "twitter.com",
+    "x.com",
+)
+
+
+def _is_social_url(url: str) -> bool:
+    """Deteksi tautan media sosial yang tidak dapat di-ingest otomatis."""
+    host = (urlparse(url).hostname or "").casefold().rstrip(".")
+    for prefix in ("www.", "m.", "mobile.", "web."):
+        if host.startswith(prefix):
+            host = host[len(prefix) :]
+    return bool(host) and any(
+        host == domain or host.endswith(f".{domain}") for domain in SOCIAL_HOSTS
+    )
 
 
 def _content_hash(text: str) -> str:
     return hashlib.sha256(normalize_whitespace(text).lower().encode("utf-8")).hexdigest()
-
-
-def to_naive_utc(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if timezone.is_aware(value):
-        return timezone.make_naive(value, UTC)
-    return value
 
 
 def _as_aware(value: datetime | None) -> datetime | None:
@@ -95,39 +103,6 @@ def _get_or_create_content(
     )
 
 
-def _load_candidates(
-    *, exclude_content_id, reference_time: datetime
-) -> tuple[list[CoordinationCandidate], int]:
-    window_start = reference_time - timedelta(hours=settings.COORDINATION_WINDOW_HOURS)
-    window_end = reference_time + timedelta(hours=settings.COORDINATION_WINDOW_HOURS)
-
-    rows = list(
-        Analysis.objects.select_related("content")
-        .exclude(content_id=exclude_content_id)
-        .order_by("-created_at")[:MAX_CANDIDATES]
-    )
-
-    candidates: list[CoordinationCandidate] = []
-    seen_hashes: set[str] = set()
-    for analysis in rows:
-        content = analysis.content
-        if content is None or content.content_hash in seen_hashes:
-            continue
-        reference = to_naive_utc(content.published_at or analysis.created_at)
-        if reference is None or not (window_start <= reference <= window_end):
-            continue
-        seen_hashes.add(content.content_hash)
-        candidates.append(
-            CoordinationCandidate(
-                analysis_id=str(analysis.id),
-                title=content.title or DEFAULT_TITLE,
-                text=content.raw_text,
-                reference_time=reference,
-            )
-        )
-    return candidates, len(candidates)
-
-
 def _persist_result(
     db_content: ContentItem,
     outcome,
@@ -142,6 +117,7 @@ def _persist_result(
         content=db_content,
         status="completed",
         engine_version=ENGINE_VERSION,
+        model_used=outcome.model_used,
         verdict=outcome.verdict,
         risk_score=outcome.risk_score,
         risk_level=outcome.risk_level,
@@ -150,6 +126,9 @@ def _persist_result(
         limitations=outcome.limitations,
         factcheck=factcheck.to_json() if factcheck else {},
         claim_check=claim_check.to_json() if claim_check else {},
+        decision=(
+            outcome.decision.to_json() if getattr(outcome, "decision", None) else {}
+        ),
         processing_ms=processing_ms,
         created_at=_as_aware(created_at) or timezone.now(),
     )
@@ -248,150 +227,12 @@ def _persist_result(
             snippet=item.snippet[:280] or None,
         )
 
-    existing_pairs = set(
-        CoordinationLink.objects.values_list("analysis_id", "related_analysis_id")
-    )
-    refreshed: set[uuid.UUID] = set()
-    for match in outcome.matches:
-        related_id = uuid.UUID(str(match.analysis_id))
-        forward = (analysis.id, related_id)
-        reverse = (related_id, analysis.id)
-        if forward not in existing_pairs:
-            CoordinationLink.objects.create(
-                analysis_id=analysis.id,
-                related_analysis_id=match.analysis_id,
-                similarity=match.similarity,
-                hours_apart=match.hours_apart,
-                shared_phrases=match.shared_phrases,
-            )
-            existing_pairs.add(forward)
-        if reverse not in existing_pairs:
-            CoordinationLink.objects.create(
-                analysis_id=related_id,
-                related_analysis_id=analysis.id,
-                similarity=match.similarity,
-                hours_apart=match.hours_apart,
-                shared_phrases=match.shared_phrases,
-            )
-            existing_pairs.add(reverse)
-            refreshed.add(related_id)
-
-    for related_id in refreshed:
-        _refresh_coordination_scoring(related_id)
-
     return analysis
-
-
-def _refresh_coordination_scoring(analysis_id) -> None:
-    """Perbarui skor koordinasi konten lama saat konten baru yang mirip masuk."""
-    analysis = (
-        Analysis.objects.select_related("content")
-        .prefetch_related("signals")
-        .filter(pk=analysis_id)
-        .first()
-    )
-    if analysis is None:
-        return
-
-    links = list(
-        CoordinationLink.objects.filter(analysis_id=analysis_id).select_related(
-            "related_analysis__content"
-        )
-    )
-    if not links:
-        return
-
-    matches = [
-        CoordinationMatch(
-            analysis_id=str(link.related_analysis_id),
-            title=(
-                link.related_analysis.content.title
-                if link.related_analysis and link.related_analysis.content
-                else DEFAULT_TITLE
-            )
-            or DEFAULT_TITLE,
-            similarity=link.similarity,
-            hours_apart=link.hours_apart,
-            shared_phrases=link.shared_phrases,
-        )
-        for link in links
-    ]
-    matches.sort(key=lambda match: match.similarity, reverse=True)
-
-    corpus_size = Analysis.objects.count()
-    coordination_signal = score_from_matches(
-        matches=matches,
-        corpus_size=corpus_size,
-        min_corpus=settings.COORDINATION_MIN_CORPUS,
-        threshold=settings.COORDINATION_SIMILARITY_THRESHOLD,
-        best_similarity=matches[0].similarity,
-    )
-
-    signal_map = {signal.category: signal for signal in analysis.signals.all()}
-    coordination_row = signal_map.get("coordination")
-    if coordination_row is None:
-        return
-
-    coordination_row.score = coordination_signal.score
-    coordination_row.level = coordination_signal.level
-    coordination_row.confidence = coordination_signal.confidence
-    coordination_row.explanation = coordination_signal.explanation
-    coordination_row.details = coordination_signal.details
-    coordination_row.save(
-        update_fields=["score", "level", "confidence", "explanation", "details"]
-    )
-
-    signals = {
-        category: SignalResult(
-            category=signal.category,
-            title=signal.title,
-            score=signal.score,
-            level=signal.level,
-            confidence=signal.confidence,
-            explanation=signal.explanation,
-            details=signal.details,
-        )
-        for category, signal in signal_map.items()
-    }
-    assessment = assess_signals(
-        signals,
-        matches,
-        corpus_size=corpus_size,
-        min_corpus=settings.COORDINATION_MIN_CORPUS,
-    )
-    analysis.risk_score = assessment.risk_score
-    analysis.risk_level = assessment.risk_level
-    analysis.verdict = assessment.verdict
-    analysis.confidence = assessment.confidence
-    analysis.summary = assessment.summary
-    factcheck_status = (analysis.factcheck or {}).get("status")
-    limitations = (
-        apply_limitation(assessment.limitations, factcheck_status)
-        if factcheck_status
-        else assessment.limitations
-    )
-    claim_check_status = (analysis.claim_check or {}).get("status")
-    analysis.limitations = (
-        apply_claim_check_limitation(limitations, claim_check_status)
-        if claim_check_status
-        else limitations
-    )
-    analysis.save(
-        update_fields=[
-            "risk_score",
-            "risk_level",
-            "verdict",
-            "confidence",
-            "summary",
-            "limitations",
-        ]
-    )
 
 
 def _analyze_content(
     content: ContentItem,
     *,
-    reference_time: datetime,
     article_links: list[dict[str, str]] | None = None,
     started_at: float | None = None,
     created_at: datetime | None = None,
@@ -399,18 +240,10 @@ def _analyze_content(
     use_ai_check: bool = True,
 ) -> Analysis:
     pipeline_started = time.perf_counter()
-    candidates, corpus_size = _load_candidates(
-        exclude_content_id=content.id, reference_time=reference_time
-    )
     outcome = run_analysis(
         text=content.raw_text,
         title=content.title,
-        reference_time=reference_time,
-        candidates=candidates,
-        threshold=settings.COORDINATION_SIMILARITY_THRESHOLD,
-        min_corpus=settings.COORDINATION_MIN_CORPUS,
     )
-    outcome.corpus_size = corpus_size
 
     # Pemeriksaan fakta eksternal dilakukan di luar transaksi: panggilan jaringan
     # tidak boleh menahan lock database, dan kegagalannya tidak membatalkan analisis.
@@ -437,6 +270,41 @@ def _analyze_content(
             outcome.limitations, claim_check.status
         )
 
+    # Gerbang relevansi: temuan cek fakta hanya menimbang verdict bila membahas
+    # pernyataan yang sama dengan konten. Model menilai kesetaraan klaim, bukan
+    # benar/salah; bila model gagal, perilaku lama (kecocokan kata) dipakai.
+    factcheck_hits = list(factcheck.hits) if factcheck else []
+    alignment: dict[str, str] = {}
+    alignment_status = "skipped"
+    if factcheck_hits:
+        alignment, alignment_status = align_factcheck_hits(
+            text=content.raw_text,
+            title=content.title,
+            claims=[claim.text for claim in outcome.claims],
+            hits=factcheck_hits,
+        )
+        if alignment_status == "applied":
+            outcome.limitations = [CLAIM_MATCH_LIMITATION, *outcome.limitations]
+
+    # Keputusan akhir: EBDE hanya menilai bukti eksternal. Sinyal narasi tetap
+    # tersimpan sebagai risk_score dan tidak pernah diumpankan sebagai bukti.
+    decision = assess_evidence(
+        items=build_evidence_items(
+            factcheck_hits=factcheck_hits,
+            claim_results=claim_check.claims if claim_check else (),
+            text=content.raw_text,
+            title=content.title,
+            factcheck_alignment=alignment,
+        ),
+        narrative_risk=outcome.risk_score,
+        provider_status={
+            "factcheck": factcheck.status if factcheck else "disabled",
+            "claim_check": claim_check.status if claim_check else "disabled",
+            "claim_match": alignment_status,
+        },
+    )
+    outcome = apply_decision(outcome, decision)
+
     processing_ms = int(
         (time.perf_counter() - (started_at or pipeline_started)) * 1000
     )
@@ -459,7 +327,6 @@ def _analyze_content(
                 "analysis_id": str(analysis.id),
                 "verdict": analysis.verdict,
                 "risk_score": analysis.risk_score,
-                "corpus_size": corpus_size,
                 "processing_ms": processing_ms,
             }
         },
@@ -480,20 +347,14 @@ def create_analysis(
     meta: dict = {}
     source_type = "url" if url else "text"
 
-    if url and detect_platform(url):
-        # Postingan media sosial diambil lewat UnifAPI karena halaman aslinya
-        # hampir selalu berupa login wall atau shell JavaScript.
-        post = fetch_social_post(url)
-        content_text = post.text
-        content_title = title or post.title
-        content_publisher = publisher or post.publisher
-        author = post.author
-        content_published_at = published_at or post.published_at
-        source_url = post.url
-        canonical_url = post.canonical_url
-        meta = post.meta
-        source_type = "social"
-    elif url:
+    if url and _is_social_url(url):
+        # Postingan media sosial hanya dapat dianalisis dari teks yang ditempel;
+        # halaman aslinya berupa login wall atau shell JavaScript.
+        raise ExtractionError(
+            "Ingest otomatis postingan media sosial tidak tersedia. Salin teks "
+            "atau caption postingan, lalu tempelkan pada mode Teks manual."
+        )
+    if url:
         article = extract_article(url)
         content_text = article.text
         content_title = title or article.title
@@ -524,10 +385,8 @@ def create_analysis(
         meta=meta,
     )
 
-    reference_time = to_naive_utc(content.published_at) or to_naive_utc(timezone.now())
     return _analyze_content(
         content,
-        reference_time=reference_time,
         article_links=article.links if article else None,
         started_at=started,
     )
@@ -551,10 +410,8 @@ def analyze_text_local(
         published_at=published_at,
         meta=meta or {},
     )
-    reference_time = to_naive_utc(content.published_at) or to_naive_utc(timezone.now())
     return _analyze_content(
         content,
-        reference_time=reference_time,
         created_at=published_at,
         use_factcheck=False,
         use_ai_check=False,
@@ -565,7 +422,7 @@ def delete_analyses(analysis_ids: list[str]) -> int:
     """Hapus analisis beserta turunannya dan bersihkan konten yang jadi yatim.
 
     Konten yang masih dipakai analisis lain (mis. URL yang sama dianalisis ulang)
-    sengaja dipertahankan agar statistik dan tautan koordinasi tidak rusak.
+    sengaja dipertahankan agar statistik dan riwayat analisis tidak rusak.
     Mengembalikan jumlah analisis yang terhapus.
     """
     if not analysis_ids:

@@ -19,6 +19,9 @@ venv/
 # Log
 *.log
 
+# Bobot model lokal (476 MB) — jangan masuk git
+backend/models/
+
 # Frontend
 node_modules/
 dist/

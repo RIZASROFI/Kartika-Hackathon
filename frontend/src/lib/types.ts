@@ -1,13 +1,59 @@
 export type Verdict =
-  | "terkoordinasi"
-  | "terindikasi_menyesatkan"
-  | "provokatif"
+  | "terindikasi_fakta"
+  | "terindikasi_hoaks"
+  | "campuran"
   | "perlu_verifikasi"
+  | "belum_dapat_dinilai"
+  // Format lama (engine heuristic-1.x) tetap dibaca agar riwayat tidak rusak.
+  | "terindikasi_menyesatkan"
   | "risiko_rendah";
+
+export type EvidenceStance = "mendukung" | "membantah" | "sebagian" | "netral";
+
+export interface DecisionItem {
+  title: string;
+  url: string;
+  publisher: string;
+  snippet: string;
+  stance: EvidenceStance;
+  stance_label: string;
+  kind: string;
+  provider: string;
+  relevance: number;
+  credibility: number;
+  recency: number;
+  weight: number;
+  group: string;
+  published_at: string | null;
+  note?: string | null;
+}
+
+export interface EvidenceDecision {
+  engine: string;
+  verdict: Verdict;
+  label: string;
+  confidence: number;
+  rationale: string;
+  summary: string;
+  sufficient: boolean;
+  insufficient_reason: string | null;
+  conflict: boolean;
+  support_weight: number;
+  refute_weight: number;
+  partial_weight: number;
+  support_groups: number;
+  refute_groups: number;
+  partial_groups: number;
+  independent_groups: number;
+  item_count: number;
+  narrative_risk: number;
+  provider_status: Record<string, string>;
+  items: DecisionItem[];
+}
 
 export type RiskLevel = "rendah" | "sedang" | "tinggi" | "kritis";
 
-export type SignalCategory = "hoax" | "provocation" | "coordination" | "bot_ai";
+export type SignalCategory = "hoax" | "indobert";
 
 export interface Signal {
   id: string;
@@ -77,26 +123,19 @@ export interface FactCheckHit {
   title: string;
   review_date: string | null;
   query: string;
+  provider?: string;
 }
 
 export interface FactCheckSummary {
   provider: string;
+  providers?: string[];
   status: "matched" | "no_match" | "unavailable" | "disabled";
   queries: string[];
+  keywords?: string[];
   checked_at: string;
   message: string | null;
   hit_count: number;
   hits: FactCheckHit[];
-}
-
-export interface RelatedAnalysis {
-  id: string;
-  title: string;
-  verdict: Verdict;
-  risk_score: number;
-  similarity: number;
-  hours_apart: number | null;
-  shared_phrases: string[];
 }
 
 export interface ContentMeta {
@@ -130,11 +169,11 @@ export interface AnalysisDetail extends AnalysisListItem {
   limitations: string[];
   factcheck: Partial<FactCheckSummary>;
   claim_check: Partial<ClaimCheckSummary>;
+  decision: Partial<EvidenceDecision>;
   content: ContentMeta;
   signals: Signal[];
   claims: Claim[];
   evidence: Evidence[];
-  related: RelatedAnalysis[];
 }
 
 export interface AnalysisPayload {
@@ -169,19 +208,7 @@ export interface DashboardTotals {
   contents: number;
   high_risk: number;
   average_risk: number;
-  coordination_links: number;
   claims: number;
-}
-
-export interface CoordinationAlert {
-  analysis_id: string;
-  title: string;
-  verdict: Verdict;
-  risk_score: number;
-  related_title: string;
-  similarity: number;
-  hours_apart: number | null;
-  created_at: string;
 }
 
 export interface DashboardSummary {
@@ -191,5 +218,4 @@ export interface DashboardSummary {
   risk_trend: TrendPoint[];
   category_scores: CategoryScore[];
   recent_analyses: AnalysisListItem[];
-  coordination_alerts: CoordinationAlert[];
 }

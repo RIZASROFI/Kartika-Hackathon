@@ -1,13 +1,10 @@
 import {
   AlertTriangle,
   ArrowRight,
-  Bot,
   Database,
-  Flame,
   Gauge,
   Globe,
   Link2,
-  Network,
   Newspaper,
   ScanText,
   Scale,
@@ -37,19 +34,13 @@ const PIPELINE = [
     icon: Gauge,
     title: "Analisis heuristik",
     service: "Lokal",
-    text: "Empat sinyal independen dihitung dan kandidat klaim diekstrak dari kalimat yang memuat penanda klaim atau angka.",
-  },
-  {
-    icon: Network,
-    title: "Korelasi korpus",
-    service: "Lokal",
-    text: "Shingle 4-kata dibandingkan dengan korpus tersimpan (Jaccard, ambang 28%, jendela ±72 jam) untuk menemukan reproduksi narasi.",
+    text: "Sinyal hoaks & fakta dihitung dan kandidat klaim diekstrak dari kalimat yang memuat penanda klaim atau angka.",
   },
   {
     icon: ShieldCheck,
     title: "Pemeriksaan fakta",
-    service: "Google Fact Check Tools",
-    text: "Judul dan klaim dicari ke indeks ClaimReview; hasil disaring memakai kemiripan kata dan angka agar tetap relevan.",
+    service: "MAFINDO + Google Fact Check",
+    text: "Judul dan klaim dicari ke Yudistira/MAFINDO dan indeks ClaimReview; hasil disaring memakai kemiripan kata dan angka agar tetap relevan.",
   },
   {
     icon: Sparkles,
@@ -58,10 +49,16 @@ const PIPELINE = [
     text: "Exa mengambil cuplikan sumber terbuka, lalu Gemini menilai tiap klaim hanya dari cuplikan tersebut dan wajib menyertakan sitasi.",
   },
   {
+    icon: Scale,
+    title: "Keputusan berbasis bukti",
+    service: "EBDE (lokal)",
+    text: "Temuan cek fakta dicocokkan dulu ke klaim konten; yang membahas klaim lain menjadi konteks. Setiap bukti dinilai dari relevansi, kredibilitas penerbit, kebaruan, dan independensi domain. Konflik dideteksi, duplikat tidak dihitung, dan verdict ditahan bila bukti belum cukup.",
+  },
+  {
     icon: Database,
     title: "Penyimpanan",
     service: "Basis data",
-    text: "Temuan, klaim, sitasi, bukti, dan relasi koordinasi disimpan untuk audit dan penelusuran lanjutan.",
+    text: "Temuan, klaim, sitasi, bukti, dan jejak keputusan EBDE disimpan untuk audit dan penelusuran lanjutan.",
   },
 ];
 
@@ -69,7 +66,7 @@ const SERVICES = [
   {
     icon: Gauge,
     name: "Mesin heuristik (lokal)",
-    text: "Empat dimensi sinyal, ekstraksi kandidat klaim, dan kemiripan Jaccard berjalan di server tanpa memanggil API eksternal.",
+    text: "Sinyal hoaks & fakta dan ekstraksi kandidat klaim berjalan di server tanpa memanggil API eksternal.",
   },
   {
     icon: ScanText,
@@ -78,8 +75,13 @@ const SERVICES = [
   },
   {
     icon: ShieldCheck,
-    name: "Google Fact Check Tools",
-    text: "Menanyakan apakah klaim sudah diperiksa lembaga pemeriksa fakta (markup ClaimReview). Hasil di-cache 7 hari dan tidak mengubah skor heuristik.",
+    name: "MAFINDO Yudistira + Google Fact Check",
+    text: "Menanyakan apakah klaim sudah diperiksa lembaga pemeriksa fakta Indonesia maupun global. Hasil di-cache 7 hari dan menjadi bukti bagi EBDE.",
+  },
+  {
+    icon: ScanText,
+    name: "IndoBERT lokal (pembanding)",
+    text: "Mengklasifikasi gaya narasi per jendela 512 token. Skornya ditampilkan sebagai pembanding dan tidak pernah dipakai sebagai bukti kebenaran.",
   },
   {
     icon: Globe,
@@ -92,27 +94,29 @@ const SERVICES = [
     text: "Menilai status klaim (didukung, dibantah, tidak cukup bukti) hanya dari cuplikan Exa, memberi alasan maksimal 40 kata, dan wajib menyertakan URL sitasi yang benar-benar ada di hasil pencarian.",
   },
   {
+    icon: Scale,
+    name: "Evidence-Based Decision Engine",
+    text: "Mencocokkan klaim temuan cek fakta dengan konten, menimbang bukti (relevansi × kredibilitas × kebaruan), menghitung tiap domain independen sekali, mendeteksi konflik, lalu memilih satu dari lima verdict — atau menahan verdict.",
+  },
+  {
     icon: Database,
     name: "Basis data lokal",
-    text: "Menyimpan analisis, sinyal, klaim, sitasi, bukti, cache pemeriksaan fakta, dan relasi koordinasi.",
+    text: "Menyimpan analisis, sinyal, klaim, sitasi, bukti, jejak keputusan, dan cache pemeriksaan fakta.",
   },
 ];
 
 const DIMENSIONS: Array<{ key: SignalCategory; weight: string }> = [
-  { key: "hoax", weight: "35%" },
-  { key: "provocation", weight: "30%" },
-  { key: "coordination", weight: "20%" },
-  { key: "bot_ai", weight: "15%" },
+  { key: "hoax", weight: "penentu risiko" },
+  { key: "indobert", weight: "pembanding" },
 ];
 
 const LIMITATIONS = [
-  "Pemeriksaan fakta eksternal bergantung pada cakupan Google Fact Check Tools; ketiadaan catatan bukan bukti kebenaran.",
+  "Pemeriksaan fakta eksternal bergantung pada cakupan MAFINDO dan Google Fact Check Tools; ketiadaan catatan bukan bukti kebenaran.",
   "Status klaim dinilai model bahasa (Gemini) dari cuplikan Exa; model dapat salah membaca sumber, sehingga setiap sitasi wajib dibuka analis.",
+  "Kesetaraan klaim temuan cek fakta juga dinilai model bahasa; temuan yang membahas klaim lain dapat ditandai konteks secara keliru, dan sebaliknya. Analis tetap wajib membuka tautan cek fakta.",
   "Pencarian Exa hanya menjangkau halaman publik yang terindeks; konten berbayar, tertutup, atau belum terindeks tidak terjangkau.",
-  "Sinyal bot/AI hanya membaca pola teks; metadata akun, waktu unggah, dan jaringan interaksi belum tersedia.",
-  "Leksikon provokasi dapat melewatkan sarkasme, ironi, kutipan berita, atau konteks budaya lokal.",
-  "Kemiripan teks yang tinggi tidak membuktikan aktor yang sama; bisa terjadi karena sindikasi berita.",
-  "Korpus kecil membuat analisis koordinasi belum reliabel dan keyakinan skor diturunkan.",
+  "Kredibilitas penerbit memakai daftar tingkatan yang dapat berubah; domain yang tidak dikenal dinilai netral, bukan otomatis dipercaya.",
+  "Independensi diukur per domain. Sindikasi yang memakai domain berbeda tetap dapat terhitung sebagai dua sumber.",
 ];
 
 export default function Methodology() {
@@ -203,9 +207,9 @@ export default function Methodology() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <Card>
-          <h2 className="text-sm font-semibold text-white">Empat dimensi sinyal</h2>
+          <h2 className="text-sm font-semibold text-white">Sinyal hoaks &amp; fakta</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Setiap dimensi diskalakan 0–100 dan diberi label tingkat risiko.
+            Skala 0–100 dengan label tingkat risiko.
           </p>
           <div className="mt-4 space-y-3">
             {DIMENSIONS.map((dimension) => {
@@ -235,9 +239,10 @@ export default function Methodology() {
             })}
           </div>
           <div className="mt-4 rounded-xl border border-cyan-400/10 bg-cyan-400/[0.03] p-3.5 text-[11px] leading-relaxed text-cyan-100/60">
-            <span className="font-semibold text-cyan-200">Rumus skor risiko:</span> 65% sinyal
-            terkuat + 35% rata-rata berbobot empat dimensi. Pendekatan ini mencegah satu sinyal
-            kritis tenggelam oleh dimensi lain yang tenang.
+            <span className="font-semibold text-cyan-200">Dua angka yang berbeda:</span> skor
+            risiko (0–100) mengukur pola penyebaran dari sinyal narasi. Verdict faktual
+            (Terindikasi Fakta/Hoaks, Campuran, Perlu Verifikasi, Belum Dapat Dinilai) dihitung
+            EBDE dari bukti eksternal saja, sehingga arah keduanya bisa berbeda.
           </div>
         </Card>
 
@@ -271,8 +276,19 @@ export default function Methodology() {
 
           <Card>
             <h2 className="text-sm font-semibold text-white">Status analisis</h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+              Ditetapkan EBDE. Ambang: bobot sisi dominan ≥ 0,60 dan dominasi ≥ 70%; bila tidak
+              ada pembanding, dua domain independen dengan bobot ≥ 0,40 sudah memutuskan; konflik
+              bila sisi lemah ≥ 50% sisi kuat; minimal dua domain independen (kecuali satu temuan
+              lembaga cek fakta dengan kredibilitas ≥ 0,90 dan relevansi ≥ 0,60).
+            </p>
             <ul className="mt-3 space-y-2.5">
-              {(Object.keys(VERDICT_META) as Array<keyof typeof VERDICT_META>).map((verdict) => (
+              {(Object.keys(VERDICT_META) as Array<keyof typeof VERDICT_META>)
+                .filter(
+                  (verdict) =>
+                    verdict !== "terindikasi_menyesatkan" && verdict !== "risiko_rendah",
+                )
+                .map((verdict) => (
                 <li key={verdict} className="space-y-1">
                   <VerdictBadge verdict={verdict} short />
                   <p className="text-[11px] leading-relaxed text-slate-500">
@@ -285,55 +301,22 @@ export default function Methodology() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <div className="flex items-center gap-2">
-            <Network className="h-4 w-4 text-fuchsia-300" />
-            <h2 className="text-sm font-semibold text-white">Cara kerja analisis koordinasi</h2>
-          </div>
-          <ul className="mt-4 space-y-3 text-xs leading-relaxed text-slate-400">
-            <li>
-              <span className="font-medium text-slate-200">Representasi teks.</span> Setiap konten
-              diubah menjadi shingle 4-kata setelah normalisasi huruf dan tanda baca.
-            </li>
-            <li>
-              <span className="font-medium text-slate-200">Kemiripan.</span> Skor Jaccard mengukur
-              irisan shingle antar dua konten. Ambang awal 28%; pasangan di atas ambang disimpan
-              sebagai relasi.
-            </li>
-            <li>
-              <span className="font-medium text-slate-200">Jendela waktu.</span> Perbandingan
-              dibatasi ±72 jam dari waktu publikasi untuk mengurangi kecocokan acak.
-            </li>
-            <li>
-              <span className="font-medium text-slate-200">Pembaruan dua arah.</span> Saat konten
-              baru cocok dengan konten lama, skor koordinasi konten lama ikut dihitung ulang.
-            </li>
-            <li>
-              <span className="font-medium text-slate-200">Interpretasi.</span> Temuan berarti
-              narasi direproduksi, bukan bukti aktor yang sama atau operasi terkoordinasi
-              terorganisir.
-            </li>
-          </ul>
-        </Card>
-
-        <div className="rounded-2xl border border-amber-400/15 bg-amber-400/[0.04] p-5">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-300" />
-            <h2 className="text-sm font-semibold text-amber-200">Batasan yang harus dibaca</h2>
-          </div>
-          <ul className="mt-4 space-y-2.5">
-            {LIMITATIONS.map((limitation) => (
-              <li
-                key={limitation}
-                className="flex gap-2 text-[11px] leading-relaxed text-amber-100/65"
-              >
-                <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-amber-300/60" />
-                {limitation}
-              </li>
-            ))}
-          </ul>
+      <div className="rounded-2xl border border-amber-400/15 bg-amber-400/[0.04] p-5">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-300" />
+          <h2 className="text-sm font-semibold text-amber-200">Batasan yang harus dibaca</h2>
         </div>
+        <ul className="mt-4 space-y-2.5">
+          {LIMITATIONS.map((limitation) => (
+            <li
+              key={limitation}
+              className="flex gap-2 text-[11px] leading-relaxed text-amber-100/65"
+            >
+              <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-amber-300/60" />
+              {limitation}
+            </li>
+          ))}
+        </ul>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -349,7 +332,7 @@ export default function Methodology() {
             </li>
             <li className="flex gap-2">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/70" />
-              Tidak ada label “pasti salah”, “pasti bot”, atau tuduhan terhadap individu.
+              Tidak ada label “pasti salah” atau tuduhan terhadap individu.
             </li>
             <li className="flex gap-2">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/70" />
@@ -364,7 +347,7 @@ export default function Methodology() {
 
         <Card>
           <div className="flex items-center gap-2">
-            <Bot className="h-4 w-4 text-violet-300" />
+            <Sparkles className="h-4 w-4 text-violet-300" />
             <h2 className="text-sm font-semibold text-white">Verifikasi klaim berbasis AI</h2>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">
@@ -405,15 +388,14 @@ export default function Methodology() {
             </li>
           </ol>
           <p className="mt-4 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
-            Rencana berikutnya: sumber primer pemeriksa fakta Indonesia (mis. CekFakta/MAFINDO),
-            penjelasan multibahasa, laporan siap unduh, dan klasifikasi sinyal akun.
+            Basis data cek fakta MAFINDO (Yudistira) dicari berdampingan dengan Google Fact Check,
+            sehingga temuan dari pemeriksa fakta Indonesia ikut tampil sebagai bukti pendukung.
+            Rencana berikutnya: penjelasan multibahasa, laporan siap unduh, dan klasifikasi sinyal
+            akun.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="chip border-white/10 bg-white/5 text-slate-400">
               <Newspaper className="h-3 w-3" /> Hoax
-            </span>
-            <span className="chip border-white/10 bg-white/5 text-slate-400">
-              <Flame className="h-3 w-3" /> Provokasi
             </span>
             <span className="chip border-white/10 bg-white/5 text-slate-400">
               <Globe className="h-3 w-3" /> Multibahasa

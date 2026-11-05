@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 
 from django.conf import settings
-from django.db.models import Prefetch
 from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_GET
 from rest_framework import status
@@ -13,7 +12,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from intel.models import Analysis, CoordinationLink
+from intel.models import Analysis
 from intel.serializers import (
     AnalysisCreateSerializer,
     AnalysisDetailSerializer,
@@ -22,7 +21,6 @@ from intel.serializers import (
 from intel.services.analysis_service import create_analysis, delete_analyses
 from intel.services.dashboard_service import build_dashboard
 from intel.services.extraction import ExtractionError
-from intel.services.social import SocialFetchError
 
 
 def _detail_queryset():
@@ -30,12 +28,6 @@ def _detail_queryset():
         "signals",
         "claims",
         "evidence",
-        Prefetch(
-            "links",
-            queryset=CoordinationLink.objects.select_related(
-                "related_analysis__content"
-            ),
-        ),
     )
 
 
@@ -85,7 +77,7 @@ class AnalysisListCreateView(APIView):
 
         try:
             analysis = create_analysis(**serializer.validated_data)
-        except (ExtractionError, SocialFetchError) as exc:
+        except ExtractionError as exc:
             return Response(
                 {"detail": exc.message}, status=exc.status_code
             )
@@ -181,7 +173,12 @@ def spa_view(request, path: str = ""):
 
     index_file = dist / "index.html"
     if index_file.is_file():
-        return FileResponse(index_file.open("rb"), content_type="text/html")
+        response = FileResponse(index_file.open("rb"), content_type="text/html")
+        # index.html menunjuk nama aset ber-hash yang berganti setiap build.
+        # Tanpa header ini browser memakai HTML lama dan tetap memuat bundel
+        # lama setelah `build_frontend`.
+        response["Cache-Control"] = "no-cache, must-revalidate"
+        return response
 
     return JsonResponse(
         {"detail": "Frontend belum dibangun. Jalankan: npm run build"}, status=404

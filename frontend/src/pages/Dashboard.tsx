@@ -1,10 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
-  ArrowRight,
   FileSearch,
   Gauge,
-  Network,
   Plus,
   ShieldAlert,
   TriangleAlert,
@@ -16,11 +14,6 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -34,11 +27,10 @@ import {
   ErrorPanel,
   SectionHeading,
   Spinner,
-  VerdictBadge,
 } from "../components/ui";
 import { api } from "../lib/api";
 import { VERDICT_META, verdictMeta } from "../lib/labels";
-import { formatDay, formatPercent, hoursLabel } from "../lib/utils";
+import { formatDay, formatPercent } from "../lib/utils";
 
 const TOOLTIP_STYLE = {
   background: "#191C24",
@@ -114,8 +106,7 @@ export default function Dashboard() {
             Dashboard Intelijen
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-slate-400">
-            Pantau indikasi hoaks, provokasi, aktivitas terkoordinasi, dan sinyal konten otomatis
-            dari konten yang dianalisis.
+            Pantau indikasi hoaks dan hasil verifikasi fakta dari konten yang dianalisis.
           </p>
         </div>
         <Link to="/analisis/baru" className="btn-primary shrink-0">
@@ -148,15 +139,8 @@ export default function Dashboard() {
           icon={Gauge}
           label="Rata-rata risiko"
           value={totals.average_risk.toFixed(1)}
-          hint="Skala 0–100 dari seluruh dimensi sinyal"
+          hint="Risiko narasi 0–100, terpisah dari verdict fakta"
           accent="border-amber-400/20 bg-amber-400/10 text-amber-300"
-        />
-        <StatCard
-          icon={Network}
-          label="Pasangan koordinasi"
-          value={totals.coordination_links}
-          hint="Konten dengan kemiripan narasi di atas ambang"
-          accent="border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-300"
         />
       </div>
 
@@ -237,28 +221,32 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <SectionHeading title="Profil sinyal" subtitle="Rata-rata skor per dimensi" />
-          <div className="h-[268px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={data.category_scores} outerRadius="72%">
-                <PolarGrid stroke="rgba(148,163,184,0.12)" />
-                <PolarAngleAxis
-                  dataKey="label"
-                  tick={{ fill: "#94a3b8", fontSize: 11 }}
-                />
-                <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-                <Radar
-                  dataKey="average_score"
-                  name="Rata-rata"
-                  stroke="#22d3ee"
-                  fill="#22d3ee"
-                  fillOpacity={0.22}
-                  strokeWidth={2}
-                />
-                <Tooltip contentStyle={TOOLTIP_STYLE} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
+          <SectionHeading title="Profil sinyal" subtitle="Rata-rata skor sinyal tersimpan" />
+          {data.category_scores.length ? (
+            <div className="space-y-5">
+              {data.category_scores.map((item) => (
+                <div key={item.category}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-300">{item.label}</span>
+                    <span className="font-mono text-[11px] text-slate-500">
+                      rata-rata {item.average_score.toFixed(1)}/100
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/5">
+                    <div
+                      className="h-full rounded-full bg-cyan-400"
+                      style={{ width: `${Math.min(100, Math.max(0, item.average_score))}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-600">
+                    Skor tertinggi {item.max_score}/100
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="Belum ada sinyal" description="Jalankan analisis pertama Anda." />
+          )}
         </Card>
       </div>
 
@@ -303,78 +291,33 @@ export default function Dashboard() {
 
         <Card className="xl:col-span-2">
           <SectionHeading
-            title="Peringatan koordinasi"
-            subtitle="Pasangan konten dengan kemiripan narasi tinggi"
+            title="Analisis terbaru"
+            subtitle="Konten yang paling baru diperiksa mesin deteksi"
             action={
-              <Link to="/analisis" className="text-xs font-medium text-cyan-300 hover:text-cyan-200">
-                Lihat riwayat
+              <Link
+                to="/analisis/baru"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200"
+              >
+                <Activity className="h-3.5 w-3.5" />
+                Periksa konten
               </Link>
             }
           />
-          {data.coordination_alerts.length ? (
-            <ul className="space-y-2.5">
-              {data.coordination_alerts.slice(0, 4).map((alert) => (
-                <li key={`${alert.analysis_id}-${alert.related_title}`}>
-                  <Link
-                    to={`/analisis/${alert.analysis_id}`}
-                    className="group flex flex-col gap-3 rounded-xl border border-white/5 bg-white/[0.015] p-3.5 transition hover:border-fuchsia-400/25 hover:bg-fuchsia-400/[0.04] sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-200 group-hover:text-white">
-                        {alert.title}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        mirip dengan “{alert.related_title}” · {hoursLabel(alert.hours_apart)}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2.5">
-                      <span className="rounded-full border border-fuchsia-400/20 bg-fuchsia-400/10 px-2 py-0.5 text-[11px] font-medium text-fuchsia-300">
-                        {formatPercent(alert.similarity)} mirip
-                      </span>
-                      <VerdictBadge verdict={alert.verdict} short />
-                      <ArrowRight className="h-4 w-4 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-fuchsia-300" />
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+          {data.recent_analyses.length ? (
+            <AnalysisTable items={data.recent_analyses} />
           ) : (
             <EmptyState
-              title="Belum ada klaster terdeteksi"
-              description="Analisis beberapa konten dengan narasi serupa untuk melihat indikasi amplifikasi."
+              title="Belum ada analisis"
+              description="Mulai dari menempelkan URL artikel atau teks yang ingin diperiksa."
+              action={
+                <Link to="/analisis/baru" className="btn-primary">
+                  <Plus className="h-4 w-4" /> Analisis konten
+                </Link>
+              }
             />
           )}
         </Card>
       </div>
-
-      <Card>
-        <SectionHeading
-          title="Analisis terbaru"
-          subtitle="Konten yang paling baru diperiksa mesin deteksi"
-          action={
-            <Link
-              to="/analisis/baru"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200"
-            >
-              <Activity className="h-3.5 w-3.5" />
-              Periksa konten
-            </Link>
-          }
-        />
-        {data.recent_analyses.length ? (
-          <AnalysisTable items={data.recent_analyses} />
-        ) : (
-          <EmptyState
-            title="Belum ada analisis"
-            description="Mulai dari menempelkan URL artikel atau teks yang ingin diperiksa."
-            action={
-              <Link to="/analisis/baru" className="btn-primary">
-                <Plus className="h-4 w-4" /> Analisis konten
-              </Link>
-            }
-          />
-        )}
-      </Card>
 
       <div className="flex items-start gap-3 rounded-xl border border-amber-400/15 bg-amber-400/[0.04] px-4 py-3.5 text-xs leading-relaxed text-amber-100/70">
         <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
