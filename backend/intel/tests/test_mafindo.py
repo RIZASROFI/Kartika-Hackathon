@@ -162,6 +162,7 @@ class ExtractionTests(TestCase):
             hit.url,
             "https://www.liputan6.com/cek-fakta/read/8324345/cek-fakta-hoaks-bansos",
         )
+        self.assertFalse(hit.reference_only)
 
     def test_references_used_when_claim_review_is_empty(self) -> None:
         fake = {**MAFINDO_ITEM, "claim_review": []}
@@ -174,6 +175,8 @@ class ExtractionTests(TestCase):
             hits[0].url,
             "https://kemensos.go.id/waspada-hoaks-terkait-bantuan-sosial",
         )
+        # Rujukan sumber bukan artikel pemeriksaan, jadi UI tidak menyebutnya demikian.
+        self.assertTrue(hits[0].reference_only)
 
     def test_numeric_status_follows_documented_values(self) -> None:
         fake = {**MAFINDO_ITEM, "status": "2"}

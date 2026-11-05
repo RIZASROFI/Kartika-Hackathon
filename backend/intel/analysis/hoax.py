@@ -123,8 +123,8 @@ def analyze_hoax(text: str, title: str | None = None) -> tuple[SignalResult, lis
         )
     else:
         explanation = (
-            "Tidak ditemukan indikasi kuat kelemahan informasi. Platform belum memverifikasi "
-            "kebenaran isi, sehingga status klaim tetap belum diverifikasi."
+            "Tidak ditemukan indikasi kuat kelemahan informasi. Skor ini mengukur pola narasi, "
+            "bukan kebenaran isi; status kebenaran dibaca dari panel Keputusan berbasis bukti."
         )
 
     confidence = 0.4

@@ -229,7 +229,13 @@ function DecisionCard({ decision }: { decision: Partial<EvidenceDecision> | unde
   );
 }
 
-function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | undefined }) {
+function FactCheckCard({
+  factcheck,
+  notes,
+}: {
+  factcheck: Partial<FactCheckSummary> | undefined;
+  notes: Map<string, string>;
+}) {
   const status = factcheck?.status;
   if (!status || status === "disabled") {
     return null;
@@ -259,6 +265,7 @@ function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | u
         <ul className="space-y-2.5">
           {hits.map((hit) => {
             const meta = FACTCHECK_META[hit.status] ?? FACTCHECK_META.tidak_jelas;
+            const note = notes.get(hit.url);
             return (
               <li
                 key={`${hit.url}-${hit.rating}`}
@@ -277,6 +284,12 @@ function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | u
                   {" · "}
                   {formatDate(hit.review_date, false)}
                 </p>
+                {note ? (
+                  <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-200/70">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-300/80" />
+                    {note}
+                  </p>
+                ) : null}
                 {hit.url ? (
                   <a
                     href={hit.url}
@@ -284,8 +297,15 @@ function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | u
                     rel="noreferrer noopener"
                     className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-cyan-400/80 hover:text-cyan-300"
                   >
-                    Buka pemeriksaan <ExternalLink className="h-3 w-3" />
+                    {hit.reference_only ? "Buka rujukan" : "Buka pemeriksaan"}{" "}
+                    <ExternalLink className="h-3 w-3" />
                   </a>
+                ) : null}
+                {hit.reference_only ? (
+                  <p className="mt-1 text-[10px] leading-relaxed text-slate-600">
+                    Tautan ini rujukan yang dikutip pemeriksaan, bukan halaman artikel pemeriksa
+                    fakta.
+                  </p>
                 ) : null}
               </li>
             );
@@ -312,8 +332,8 @@ function FactCheckCard({ factcheck }: { factcheck: Partial<FactCheckSummary> | u
       )}
       <p className="mt-3 flex items-start gap-1.5 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
         <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0 text-cyan-400/70" />
-        Hasil pemeriksaan pihak ketiga ditampilkan sebagai bukti pendukung, bukan pengganti
-        penilaian analis.
+        Hasil pemeriksaan pihak ketiga menjadi bahan pertimbangan EBDE, bukan pengganti penilaian
+        analis: temuan untuk klaim lain ditandai sebagai konteks dan tidak menimbang verdict.
       </p>
     </Card>
   );
@@ -578,6 +598,58 @@ export default function AnalysisDetail() {
                   );
                 })}
               </ol>
+            ) : data.claim_check?.claims?.length ? (
+              <div className="space-y-3">
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  Tidak ada kalimat berpola klaim; {data.claim_check.model ?? "model bahasa"} menilai
+                  kalimat pertama sebagai klaim pengganti agar sumbernya tetap dapat diaudit.
+                </p>
+                <ol className="space-y-3">
+                  {data.claim_check.claims.map((claim, index) => {
+                    const evidenceMeta = CLAIM_EVIDENCE_META[claim.status];
+                    const citations = claim.citations ?? [];
+                    return (
+                      <li
+                        key={`${claim.claim}-${index}`}
+                        className="rounded-xl border border-white/5 bg-white/[0.015] p-4"
+                      >
+                        <p className="text-sm leading-relaxed text-slate-200">{claim.claim}</p>
+                        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                          {evidenceMeta ? (
+                            <span className={cn("chip", evidenceMeta.badge)}>
+                              {evidenceMeta.label}
+                            </span>
+                          ) : null}
+                          <span className="chip border-white/10 bg-white/5 text-slate-400">
+                            klaim pengganti
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                          {claim.rationale}
+                        </p>
+                        {citations.length ? (
+                          <ul className="mt-2 space-y-1">
+                            {citations.map((citation) => (
+                              <li key={citation.url} className="text-[11px] leading-relaxed">
+                                <a
+                                  href={citation.url}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  className="inline-flex items-center gap-1 font-medium text-cyan-400/80 hover:text-cyan-300"
+                                >
+                                  <ExternalLink className="h-3 w-3 shrink-0" />
+                                  {citation.publisher || citation.title}
+                                </a>
+                                <span className="text-slate-600"> · {citation.title}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
             ) : (
               <p className="text-sm text-slate-500">
                 Tidak ada kalimat yang memenuhi pola klaim untuk diekstrak.
@@ -595,7 +667,16 @@ export default function AnalysisDetail() {
         </div>
 
         <div className="space-y-6">
-          <FactCheckCard factcheck={data.factcheck} />
+          <FactCheckCard
+            factcheck={data.factcheck}
+            notes={
+              new Map(
+                (data.decision.items ?? [])
+                  .filter((item) => item.note)
+                  .map((item) => [item.url, item.note as string]),
+              )
+            }
+          />
 
           <Card>
             <SectionHeading

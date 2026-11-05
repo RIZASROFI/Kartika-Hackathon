@@ -177,6 +177,9 @@ class FactCheckHit:
     review_date: str | None = None
     query: str = ""
     provider: str = PROVIDER
+    # True bila `url` hanya rujukan yang dikutip pemeriksa fakta, bukan artikel
+    # pemeriksaannya sendiri (MAFINDO kadang tidak menyertakan tautan artikel).
+    reference_only: bool = False
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -465,18 +468,20 @@ def _lowercase_tokens(text: str) -> set[str]:
     return tokens
 
 
-def _mafindo_article_url(item: dict, claim_url: str) -> str:
-    """Tautan artikel cek fakta.
+def _mafindo_article_url(item: dict, claim_url: str) -> tuple[str, bool]:
+    """Tautan artikel cek fakta dan penanda rujukan.
 
     `claim_review.claim_url` kadang menunjuk sumber klaim yang diperiksa (mis.
     YouTube) alih-alih artikelnya. URL dengan host yang sama dengan
-    `source_link` karena itu dilewati.
+    `source_link` karena itu dilewati. Bila tidak ada artikel, `references`
+    dipakai sebagai rujukan dan ditandai `reference_only` agar UI tidak
+    menyebutnya sebagai halaman pemeriksaan fakta.
     """
     source_host = _host(str(item.get("source_link") or ""))
     claim_host = _host(claim_url)
     if claim_host and claim_host != source_host:
-        return _first_url(claim_url)
-    return _first_url(item.get("references"), claim_url)
+        return _first_url(claim_url), False
+    return _first_url(item.get("references"), claim_url), True
 
 
 def _is_relevant_mafindo_hit(
@@ -639,13 +644,15 @@ def _extract_mafindo_hits(
 
         rating, status = _mafindo_rating(item)
         publisher = normalize_whitespace(str(item.get("authors") or ""))
+        article_url, reference_only = _mafindo_article_url(item, claim_url)
         hits.append(
             FactCheckHit(
                 claim=title[:500],
                 rating=rating[:120],
                 status=status,
                 publisher=(publisher or MAFINDO_FALLBACK_PUBLISHER)[:256],
-                url=_mafindo_article_url(item, claim_url),
+                url=article_url,
+                reference_only=reference_only,
                 title=title[:512],
                 review_date=(str(item.get("tanggal") or "").strip() or None),
                 query=query,

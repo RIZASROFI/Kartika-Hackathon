@@ -124,6 +124,7 @@ export interface FactCheckHit {
   review_date: string | null;
   query: string;
   provider?: string;
+  reference_only?: boolean;
 }
 
 export interface FactCheckSummary {
