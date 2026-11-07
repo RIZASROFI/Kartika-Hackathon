@@ -1,0 +1,14 @@
+{
+    "pretrained_base_model": "indobenchmark/indobert-base-p1",
+    "framework_version": "PyTorch 2.0+ / Transformers",
+    "train_samples": 974,
+    "validation_samples": 209,
+    "test_samples": 209,
+    "hyperparameters": {
+        "batch_size": 8,
+        "learning_rate": 2e-05,
+        "optimizer": "AdamW",
+        "early_stopping_patience": 2,
+        "actual_epochs_trained": 4
+    }
+}

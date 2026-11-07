@@ -1,0 +1,9 @@
+{
+    "0": "Hoax",
+    "1": "Fact",
+    "description": {
+        "Hoax": "Teks diklasifikasikan sebagai disinformasi / rumor tidak benar berdasarkan anotasi dataset (sumber latih: TurnBackHoax).",
+        "Fact": "Teks diklasifikasikan memiliki rujukan faktual / terklarifikasi benar berdasarkan anotasi dataset (sumber latih: Tempo, CNN, Kompas).",
+        "disclaimer": "Prediksi model ini bersifat probabilistik indikatif dan tidak menentukan kebenaran hakiki mutlak dari suatu klaim."
+    }
+}
