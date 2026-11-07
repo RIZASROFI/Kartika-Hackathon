@@ -8,7 +8,9 @@ bukan kebenaran isi.
 
 Setiap bukti dinilai pada empat dimensi:
 
-- relevansi   : porsi kata penting bukti yang juga muncul pada klaim/konten;
+- relevansi   : kecocokan kata penting dua arah — porsi bukti yang muncul pada
+                klaim/konten, atau porsi klaim yang dicakup bukti (dipakai yang
+                terbaik agar artikel panjang tidak dihukum);
 - kredibilitas: tingkat penerbit (lembaga cek fakta > media mapan > blog/UGC);
 - kebaruan    : peluruhan eksponensial dengan paruh 365 hari;
 - independensi: satu domain penerbit hanya dihitung sekali (bobot terkuatnya),
@@ -252,10 +254,22 @@ def _tokens(value: str) -> set[str]:
 
 
 def _overlap(text: str, reference: set[str]) -> float:
+    """Porsi kata penting `text` yang juga muncul pada `reference`."""
     hit_tokens = _tokens(text)
     if not hit_tokens or not reference:
         return 0.0
     return len(hit_tokens & reference) / len(hit_tokens)
+
+
+def _coverage(text: str, reference: set[str]) -> float:
+    """Porsi kata penting `reference` yang tercakup oleh `text`.
+
+    Kebalikan arah dari `_overlap`: dipakai agar artikel panjang yang benar-benar
+    membahas klaim pendek tidak dihukum oleh snippetnya yang bertele-tele.
+    """
+    if not reference:
+        return 0.0
+    return len(_tokens(text) & reference) / len(reference)
 
 
 def _parse_date(value: object) -> datetime | None:
@@ -439,8 +453,15 @@ def build_evidence_items(
                     stance=stance,
                     kind="pencarian_web",
                     provider="exa",
+                    # Relevansi diambil dari arah terbaik: seberapa fokus bukti
+                    # pada klaim, atau seberapa lengkap bukti menutup klaim.
                     relevance=round(
-                        max(0.35, _overlap(f"{title_text} {snippet}", claim_tokens)), 3
+                        max(
+                            0.35,
+                            _overlap(f"{title_text} {snippet}", claim_tokens),
+                            _coverage(f"{title_text} {snippet}", claim_tokens),
+                        ),
+                        3,
                     ),
                     credibility=credibility_score(publisher, url),
                     recency=NEUTRAL_RECENCY,

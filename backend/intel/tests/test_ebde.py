@@ -193,6 +193,41 @@ class EvidenceScoringTests(TestCase):
         items = build_evidence_items(factcheck_hits=[Hit()], text=ARTICLE)
         self.assertEqual(items[0].stance, STANCE_PARTIAL)
 
+    def test_long_article_can_cover_a_short_claim(self) -> None:
+        """Klaim pendek yang dibahas artikel panjang tidak boleh terhukum lantai 0,35."""
+        text = "Kasus dugaan penyadapan ilegal oleh mantan Kapolri Listyo Sigit"
+        claim = SimpleNamespace(
+            claim=text,
+            status="didukung",
+            citations=[
+                {
+                    "title": "Mantan Kapolri Listyo Sigit ditetapkan tersangka penyadapan",
+                    "url": "https://www.bbc.com/indonesia/articles/x",
+                    "publisher": "bbc.com",
+                    "snippet": (
+                        "Mabes Polri menetapkan tersangka dalam kasus dugaan penyadapan "
+                        "ilegal. Tiga perwira yang sebelumnya ditetapkan sebagai tersangka "
+                        "adalah mantan Kapolri Jenderal Listyo Sigit, Kadivkum Polri, dan "
+                        "seorang perwira lain. Penyidikan masih berlanjut."
+                    ),
+                },
+                {
+                    "title": "Kasus penyadapan, Polri periksa 13 saksi",
+                    "url": "https://news.detik.com/berita/d-1/x",
+                    "publisher": "news.detik.com",
+                    "snippet": (
+                        "Polri terus mendalami kasus penyadapan ilegal oleh mantan Kapolri "
+                        "Listyo Sigit. Belasan saksi sudah diperiksa termasuk ahli ITE."
+                    ),
+                },
+            ],
+        )
+
+        items = build_evidence_items(claim_results=[claim], text=text)
+        self.assertTrue(all(item.relevance > 0.35 for item in items))
+        decision = assess_evidence(items=items, narrative_risk=12)
+        self.assertEqual(decision.verdict, VERDICT_TERINDIKASI_FAKTA)
+
 
 class DecisionTests(TestCase):
     def test_supporting_evidence_yields_indicated_fact(self) -> None:

@@ -75,11 +75,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               Mesin
             </span>
             <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-medium text-cyan-300">
-              heuristic-1.0
+              ebde-2.0
             </span>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            Skor bersifat indikatif. Verifikasi analis tetap diperlukan sebelum tindakan.
+            Skor risiko dari sinyal heuristik & IndoBERT; verdict dari bukti (EBDE). Verifikasi
+            analis tetap diperlukan.
           </p>
         </div>
         <p className="px-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">

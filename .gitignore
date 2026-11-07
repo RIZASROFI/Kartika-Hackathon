@@ -19,8 +19,9 @@ venv/
 # Log
 *.log
 
-# Bobot model lokal (476 MB) — jangan masuk git
-backend/models/
+# Bobot model IndoBERT (~475 MB) disimpan lewat Git LFS (lihat .gitattributes).
+# Artefak besar non-teks lain tetap tidak masuk git.
+backend/models/**/__pycache__/
 
 # Frontend
 node_modules/

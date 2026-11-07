@@ -13,7 +13,7 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 - **Hoax & fact-checking signal** — atribusi sumber, sensasionalisme, tekanan menyebarkan,
   klaim numerik tanpa sumber, ekstraksi kandidat klaim.
 - **Sinyal model IndoBERT lokal (opsional)** — paket `backend/models/cynteltika_indobert_v1`
-  (tidak masuk git) dinilai per jendela 512 token sebagai sinyal **pembanding**. Skornya tidak
+  (tersedia di repo lewat Git LFS) dinilai per jendela 512 token sebagai sinyal **pembanding**. Skornya tidak
   pernah dipakai sebagai bukti dan tidak mengubah verdict; panel detail menampilkan keduanya.
 - **Pemeriksaan fakta eksternal** — Google Fact Check Tools API dan basis data **MAFINDO
   Yudistira** dicari untuk judul dan klaim utama, hasilnya disaring relevansinya, di-cache
@@ -63,7 +63,7 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 │   │   ├── management/commands/   # runserver, build_frontend
 │   │   ├── migrations/
 │   │   └── tests/
-│   ├── models/                    # bobot IndoBERT lokal (di luar git, ~476 MB)
+│   ├── models/                    # bobot IndoBERT lokal via Git LFS (~475 MB)
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -85,6 +85,16 @@ python -m venv .venv
 # source .venv/bin/activate && pip install -r requirements.txt   # Linux/macOS
 cp .env.example .env
 ```
+
+Bobot IndoBERT (~475 MB) disimpan lewat **Git LFS**. Jalankan sekali setelah clone agar bobot
+terunduh:
+
+```bash
+git lfs install
+git lfs pull
+```
+
+Tanpa bobot tersebut aplikasi tetap berjalan; hanya sinyal IndoBERT yang nonaktif.
 
 Frontend tidak perlu disiapkan manual: `runserver` akan menjalankan `npm install` dan
 `npm run build` bila `frontend/dist` belum ada (Node.js + npm diperlukan).
@@ -150,6 +160,10 @@ python manage.py test                 # 111 tes
 
 ## Konfigurasi backend
 
+Salin `backend/.env.example` menjadi `backend/.env` lalu isi nilainya. **Kunci API tidak disertakan
+di dalam repo** demi keamanan: fitur yang membutuhkannya otomatis nonaktif bila nilainya kosong,
+sehingga aplikasi tetap bisa dijalankan dan dinilai tanpa kunci apa pun.
+
 | Variabel | Default | Keterangan |
 | --- | --- | --- |
 | `SECRET_KEY` | `dev-only-change-me` | Wajib diganti di produksi |
@@ -160,7 +174,7 @@ python manage.py test                 # 111 tes
 | `FETCH_TIMEOUT_SECONDS` | `15` | Timeout pengambilan artikel |
 | `MAX_CONTENT_CHARS` | `60000` | Batas teks yang disimpan/dianalisis |
 | `INDOBERT_ENABLED` | `true` | Sinyal model lokal; nonaktif otomatis bila artefak model tidak ada atau saat `manage.py test` |
-| `INDOBERT_MODEL_DIR` | `backend/models/cynteltika_indobert_v1` | Lokasi paket model (di luar git) |
+| `INDOBERT_MODEL_DIR` | `backend/models/cynteltika_indobert_v1` | Lokasi paket model (Git LFS) |
 | `INDOBERT_MAX_TOKENS` | `512` | Panjang jendela token per potongan teks |
 | `INDOBERT_MAX_CHUNKS` | `4` | Jumlah jendela yang dinilai per analisis (pembatas waktu) |
 | `INDOBERT_BATCH_SIZE` | `4` | Jendela per batch inference |
@@ -237,7 +251,9 @@ Tingkat risiko: rendah 0–24, sedang 25–49, tinggi 50–74, kritis 75–100.
 Sinyal narasi tidak pernah menjadi bukti. Verdict hanya ditetapkan EBDE dari temuan cek fakta dan
 sitasi pencarian, dengan tiap bukti diberi bobot:
 
-- **relevansi** — porsi kata penting bukti yang muncul pada klaim/konten;
+- **relevansi** — kecocokan kata penting dua arah (porsi bukti yang muncul pada klaim/konten,
+  atau porsi klaim yang dicakup bukti; dipakai yang tertinggi agar artikel panjang yang
+  benar-benar membahas klaim pendek tidak dihukum);
 - **kredibilitas** — lembaga cek fakta 0,95; media mapan 0,85; domain pemerintah/kepolisian/
   akademik 0,80; media populer 0,70; platform UGC (blogspot/wordpress/medium/media sosial)
   0,30; domain lain 0,50;
