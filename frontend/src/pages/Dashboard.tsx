@@ -11,7 +11,6 @@ import { Link } from "react-router-dom";
 import {
   Bar,
   BarChart,
-  CartesianGrid,
   Cell,
   LabelList,
   ResponsiveContainer,
@@ -30,7 +29,7 @@ import {
 } from "../components/ui";
 import { api } from "../lib/api";
 import { VERDICT_META, verdictMeta } from "../lib/labels";
-import { formatDay, formatPercent } from "../lib/utils";
+import { formatPercent } from "../lib/utils";
 
 const TOOLTIP_STYLE = {
   background: "#191C24",
@@ -144,82 +143,7 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <SectionHeading
-            title="Tren analisis & risiko"
-            subtitle="14 hari terakhir berdasarkan waktu analisis"
-            action={
-              <div className="hidden items-center gap-4 text-[11px] text-slate-500 sm:flex">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-cyan-400" /> Analisis
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-amber-400" /> Rata-rata risiko
-                </span>
-              </div>
-            }
-          />
-          <div className="h-[268px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={data.risk_trend}
-                margin={{ top: 8, right: 4, left: -22, bottom: 0 }}
-                barGap={2}
-                barCategoryGap="28%"
-              >
-                <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={formatDay}
-                  tick={{ fill: "#64748b", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={18}
-                />
-                <YAxis
-                  yAxisId="left"
-                  allowDecimals={false}
-                  tick={{ fill: "#64748b", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  domain={[0, 100]}
-                  tick={{ fill: "#64748b", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={32}
-                />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  labelStyle={{ color: "#94a3b8" }}
-                  labelFormatter={(value) => formatDay(String(value))}
-                />
-                <Bar
-                  yAxisId="left"
-                  dataKey="analyses"
-                  name="Analisis"
-                  fill="#22d3ee"
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={22}
-                />
-                <Bar
-                  yAxisId="right"
-                  dataKey="average_risk"
-                  name="Rata-rata risiko"
-                  fill="#fbbf24"
-                  fillOpacity={0.85}
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={22}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
+      <div className="grid gap-6">
         <Card>
           <SectionHeading title="Profil sinyal" subtitle="Rata-rata skor sinyal tersimpan" />
           {data.category_scores.length ? (

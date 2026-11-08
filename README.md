@@ -26,7 +26,7 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
   relevansi × kredibilitas penerbit × kebaruan, dihitung per domain independen (duplikat tidak
   dihitung), konflik antarbukti dideteksi, dan verdict ditahan bila bukti belum cukup.
   `risk_score` narasi disimpan terpisah dan tidak dapat menggeser verdict.
-- **Dashboard** — KPI, tren 14 hari, distribusi status, profil sinyal, analisis terbaru.
+- **Dashboard** — KPI, distribusi status, profil sinyal, analisis terbaru.
 - **Riwayat & detail analisis** — filter status, ringkasan, kartu sinyal, klaim,
   sumber/bukti, dan daftar batasan.
 - **Django admin** untuk inspeksi data (konten, analisis, sinyal, klaim, bukti).

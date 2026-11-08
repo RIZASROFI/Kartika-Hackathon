@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowRight,
   Database,
   Gauge,
@@ -169,6 +170,174 @@ export default function Methodology() {
             );
           })}
         </ol>
+      </Card>
+
+      <Card>
+        <div className="mb-5 flex items-center gap-2">
+          <Scale className="h-4 w-4 text-cyan-300" />
+          <h2 className="text-sm font-semibold text-white">
+            Alur keputusan: siapa menentukan apa
+          </h2>
+        </div>
+        <p className="max-w-3xl text-[11px] leading-relaxed text-slate-500">
+          Satu konten melewati dua jalur paralel. Jalur narasi hanya menghasilkan skor risiko;
+          jalur bukti hanya menghasilkan status. Keduanya tidak pernah saling menggantikan, dan
+          IndoBERT berada di luar keduanya.
+        </p>
+
+        <div className="mt-5 space-y-3">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-center">
+            <p className="text-xs font-semibold text-slate-200">Teks atau URL</p>
+            <p className="mt-0.5 text-[10px] text-slate-500">
+              Ekstraksi isi &amp; metadata — Trafilatura + BeautifulSoup
+            </p>
+          </div>
+
+          <div className="flex justify-center text-slate-600">
+            <ArrowDown className="h-4 w-4" aria-hidden="true" />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/[0.03] p-3.5">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-400/15 bg-cyan-400/10">
+                  <Gauge className="h-4 w-4 text-cyan-300" />
+                </span>
+                <div>
+                  <p className="text-xs font-semibold text-slate-100">Jalur narasi · lokal</p>
+                  <p className="text-[10px] text-slate-500">Heuristik, tanpa API</p>
+                </div>
+              </div>
+              <ul className="mt-3 space-y-1 text-[11px] leading-relaxed text-slate-400">
+                <li>• Atribusi yang dapat ditelusuri, sumber kabur</li>
+                <li>• Bahasa sensasional &amp; dorongan menyebarkan</li>
+                <li>• Klaim angka tanpa sumber, rujukan lembaga</li>
+              </ul>
+              <div className="mt-3 rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Menghasilkan</p>
+                <p className="text-xs font-semibold text-cyan-200">
+                  skor risiko 0–100 + level
+                </p>
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                Tidak menetapkan benar atau salah.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-violet-400/15 bg-violet-400/[0.03] p-3.5">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-violet-400/15 bg-violet-400/10">
+                  <Globe className="h-4 w-4 text-violet-300" />
+                </span>
+                <div>
+                  <p className="text-xs font-semibold text-slate-100">Jalur bukti · eksternal</p>
+                  <p className="text-[10px] text-slate-500">Satu-satunya penentu status</p>
+                </div>
+              </div>
+              <div className="mt-3 space-y-2">
+                <div className="rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500">Masukan</p>
+                  <p className="text-xs font-semibold text-slate-200">
+                    klaim hasil ekstraksi heuristik
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2">
+                    <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200">
+                      <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-300" /> MAFINDO +
+                      Google
+                    </p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                      Temuan cek fakta yang sudah ada.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2">
+                    <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200">
+                      <Sparkles className="h-3 w-3 shrink-0 text-violet-300" /> Exa → Gemini
+                    </p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                      Cuplikan web, lalu status klaim + sitasi wajib valid.
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500">Menghasilkan</p>
+                  <p className="text-xs font-semibold text-violet-200">
+                    bukti bertanda arah (mendukung/membantah)
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.015] p-3.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2.5">
+              <ScanText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-200">
+                  IndoBERT lokal · di luar kedua jalur
+                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
+                  Sinyal pembanding dari gaya penulisan. Disimpan dan ditampilkan di detail, tetapi
+                  tidak masuk skor risiko maupun keputusan.
+                </p>
+              </div>
+            </div>
+            <span className="chip shrink-0 border-white/10 bg-white/5 text-slate-400">
+              tidak memutus
+            </span>
+          </div>
+
+          <div className="flex justify-center text-slate-600">
+            <ArrowDown className="h-4 w-4" aria-hidden="true" />
+          </div>
+
+          <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-3.5">
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-400/15 bg-emerald-400/10">
+                <Scale className="h-4 w-4 text-emerald-300" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-100">
+                  EBDE · keputusan (lokal, tanpa model bahasa)
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                  Menyaring temuan yang membahas klaim lain, menimbang bukti (relevansi ×
+                  kredibilitas × kebaruan) per domain independen, mendeteksi konflik, lalu
+                  menetapkan satu status — atau menahannya bila bukti belum cukup.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-center text-slate-600">
+            <ArrowDown className="h-4 w-4" aria-hidden="true" />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-white/5 bg-white/[0.015] px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                Kolom “Skor risiko”
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                Dari jalur narasi: prioritas triase, bukan peluang hoaks dan bukan status.
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-white/[0.015] px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                Kolom “Status”
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                Dari EBDE: kesimpulan faktual atas bukti eksternal yang dapat diaudit.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-4 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
+          Gemini hanya memberi arah bukti, bukan verdict. Bila Exa atau Gemini tidak dapat
+          dihubungi, EBDE menahan status alih-alih menebak, sementara skor risiko tetap tersedia.
+        </p>
       </Card>
 
       <Card>
