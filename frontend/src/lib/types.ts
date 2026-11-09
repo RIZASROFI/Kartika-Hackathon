@@ -46,6 +46,13 @@ export interface EvidenceDecision {
   partial_groups: number;
   independent_groups: number;
   item_count: number;
+  /** Skor maksimum tiap dimensi; UI menulis bobot sebagai "nilai/maksimum". */
+  scales?: {
+    relevance: number;
+    credibility: number;
+    recency: number;
+    weight: number;
+  };
   narrative_risk: number;
   provider_status: Record<string, string>;
   items: DecisionItem[];

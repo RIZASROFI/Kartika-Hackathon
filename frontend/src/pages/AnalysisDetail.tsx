@@ -18,7 +18,6 @@ import {
   ConfidencePill,
   EmptyState,
   ErrorPanel,
-  LevelBadge,
   ScoreBar,
   ScoreRing,
   SectionHeading,
@@ -50,6 +49,10 @@ const EVIDENCE_KIND_LABEL: Record<string, string> = {
   konteks: "Konteks",
 };
 
+// Dipakai untuk rekaman lama yang belum menyimpan `scales` dari EBDE; nilainya
+// sama dengan tier tertinggi di mesin (kredibilitas lembaga cek fakta = 0.95).
+const SCORE_SCALE_FALLBACK = { relevance: 1, credibility: 0.95, recency: 1, weight: 0.95 };
+
 const FACTCHECK_PROVIDER_LABEL: Record<string, string> = {
   google: "Google Fact Check Tools",
   mafindo: "MAFINDO Yudistira",
@@ -80,6 +83,7 @@ function DecisionCard({ decision }: { decision: Partial<EvidenceDecision> | unde
   }
 
   const items = decision.items ?? [];
+  const scale = { ...SCORE_SCALE_FALLBACK, ...(decision.scales ?? {}) };
   const sides = [
     {
       key: "support",
@@ -145,8 +149,18 @@ function DecisionCard({ decision }: { decision: Partial<EvidenceDecision> | unde
                 {side.label}
                 <span className="ml-1 text-slate-600">· {side.groups} domain</span>
               </span>
-              <span className="font-mono text-[10px] text-slate-500">
+              <span
+                className="font-mono text-[10px] text-slate-500"
+                title={
+                  side.groups > 0
+                    ? `Maksimum ${scale.weight.toFixed(2)} per domain independen × ${side.groups} domain`
+                    : undefined
+                }
+              >
                 bobot {side.weight.toFixed(2)}
+                {side.groups > 0
+                  ? ` / maks ${(scale.weight * side.groups).toFixed(2)}`
+                  : ""}
               </span>
             </div>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/5">
@@ -182,11 +196,15 @@ function DecisionCard({ decision }: { decision: Partial<EvidenceDecision> | unde
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={cn("chip", stance.badge)}>{stance.label}</span>
                     <span className="font-mono text-[10px] text-slate-500">
-                      bobot {item.weight.toFixed(2)}
+                      bobot {item.weight.toFixed(2)}/{scale.weight.toFixed(2)}
                     </span>
-                    <span className="font-mono text-[10px] text-slate-600">
-                      rel {item.relevance.toFixed(2)} · kred {item.credibility.toFixed(2)} · baru{" "}
-                      {item.recency.toFixed(2)}
+                    <span
+                      className="font-mono text-[10px] text-slate-600"
+                      title="Tiap dimensi berskala 0–1. Kredibilitas maksimum 0.95, yaitu tier lembaga cek fakta; bobot maksimum = 1.00 × 0.95 × 1.00."
+                    >
+                      rel {item.relevance.toFixed(2)}/{scale.relevance.toFixed(2)} · kred{" "}
+                      {item.credibility.toFixed(2)}/{scale.credibility.toFixed(2)} · baru{" "}
+                      {item.recency.toFixed(2)}/{scale.recency.toFixed(2)}
                     </span>
                   </div>
                   <p className="mt-1.5 truncate text-[11px] text-slate-300">
@@ -222,8 +240,8 @@ function DecisionCard({ decision }: { decision: Partial<EvidenceDecision> | unde
 
       <p className="mt-3 flex items-start gap-1.5 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
         <Scale className="mt-0.5 h-3 w-3 shrink-0 text-cyan-400/70" />
-        Skor risiko narasi ({decision.narrative_risk ?? 0}/100) tidak dipakai sebagai bukti dan
-        tidak dapat menggeser status ini.
+        Indeks pola narasi ({decision.narrative_risk ?? 0}/100) hanya konteks: tidak dipakai
+        sebagai bukti dan tidak dapat menggeser status ini.
       </p>
     </Card>
   );
@@ -428,7 +446,6 @@ export default function AnalysisDetail() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <VerdictBadge verdict={data.verdict} />
-              <LevelBadge level={data.risk_level} />
               <span className="chip border-white/10 bg-white/5 text-slate-400">
                 <Clock className="h-3 w-3" />
                 {formatDate(data.created_at)}
@@ -458,7 +475,11 @@ export default function AnalysisDetail() {
               ) : null}
               <span>{data.content.word_count} kata</span>
               <span>Mesin {data.engine_version}</span>
-              <span>{data.processing_ms} ms</span>
+              <span>
+                {(data.processing_ms / 1000).toLocaleString("id-ID", {
+                  maximumFractionDigits: 1,
+                })}{" "}detik
+              </span>
             </div>
             <p className="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{data.summary}</p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -466,9 +487,9 @@ export default function AnalysisDetail() {
             </div>
           </div>
           <div className="flex flex-col items-center gap-2 lg:items-end">
-            <ScoreRing score={data.risk_score} level={data.risk_level} />
+            <ScoreRing score={data.risk_score} />
             <p className="max-w-[150px] text-center text-[10px] leading-relaxed text-slate-500 lg:text-right">
-              Risiko penyebaran (narasi), bukan verdict fakta
+              Indeks pola narasi 0–100 · bukan verdict fakta
             </p>
           </div>
         </div>
@@ -480,7 +501,7 @@ export default function AnalysisDetail() {
           <div>
             <SectionHeading
               title="Analisis sinyal"
-              subtitle="Sinyal heuristik dan model dengan skor 0–100"
+              subtitle="Indikator pembentuk indeks pola narasi (0–100)"
             />
             <div className="grid gap-4">
               {data.signals.map((signal) => {
@@ -498,7 +519,6 @@ export default function AnalysisDetail() {
                           <p className="text-[11px] text-slate-500">{meta?.label ?? signal.category}</p>
                         </div>
                       </div>
-                      <LevelBadge level={signal.level} />
                     </div>
 
                     <div className="mt-4 flex items-end justify-between">
@@ -512,7 +532,7 @@ export default function AnalysisDetail() {
                         keyakinan {formatPercent(signal.confidence)}
                       </span>
                     </div>
-                    <ScoreBar score={signal.score} level={signal.level} className="mt-2" />
+                    <ScoreBar score={signal.score} className="mt-2" />
 
                     <p className="mt-3 text-xs leading-relaxed text-slate-400">{signal.explanation}</p>
 

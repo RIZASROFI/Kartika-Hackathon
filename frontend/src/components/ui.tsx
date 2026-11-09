@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { AlertTriangle, Inbox, Loader2, ShieldCheck, Trash2 } from "lucide-react";
 
-import { LEVEL_META, verdictMeta } from "../lib/labels";
-import type { RiskLevel, Verdict } from "../lib/types";
+import { verdictMeta } from "../lib/labels";
+import type { Verdict } from "../lib/types";
 import { cn } from "../lib/utils";
 
 export function Card({
@@ -45,25 +45,11 @@ export function VerdictBadge({ verdict, short = false }: { verdict: Verdict; sho
   );
 }
 
-export function LevelBadge({ level }: { level: RiskLevel }) {
-  const meta = LEVEL_META[level] ?? LEVEL_META.rendah;
-  return <span className={cn("chip", meta.badge)}>{meta.label}</span>;
-}
-
-export function ScoreBar({
-  score,
-  level,
-  className,
-}: {
-  score: number;
-  level: RiskLevel;
-  className?: string;
-}) {
-  const meta = LEVEL_META[level] ?? LEVEL_META.rendah;
+export function ScoreBar({ score, className }: { score: number; className?: string }) {
   return (
     <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-white/5", className)}>
       <div
-        className={cn("h-full rounded-full transition-all duration-700", meta.bar)}
+        className="h-full rounded-full bg-cyan-400 transition-all duration-700"
         style={{ width: `${Math.max(2, Math.min(100, score))}%` }}
       />
     </div>
@@ -72,22 +58,16 @@ export function ScoreBar({
 
 export function ScoreRing({
   score,
-  level,
   size = 132,
-  label = "Risiko",
+  label = "Indeks narasi",
 }: {
   score: number;
-  level: RiskLevel;
   size?: number;
   label?: string;
 }) {
-  const meta = LEVEL_META[level] ?? LEVEL_META.rendah;
   const radius = (size - 14) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = circumference * (Math.max(0, Math.min(100, score)) / 100);
-  const strokeColor = { rendah: "#34d399", sedang: "#fbbf24", tinggi: "#fb923c", kritis: "#fb7185" }[
-    level
-  ];
 
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
@@ -105,7 +85,7 @@ export function ScoreRing({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke={strokeColor}
+          stroke="#38bdf8"
           strokeWidth={8}
           strokeLinecap="round"
           strokeDasharray={`${progress} ${circumference - progress}`}
@@ -113,8 +93,8 @@ export function ScoreRing({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-3xl font-semibold text-white">{score}</span>
-        <span className={cn("text-[11px] font-medium uppercase tracking-wider", meta.badge.split(" ").pop())}>
-          {label} · {meta.label}
+        <span className="text-[11px] font-medium uppercase tracking-wider text-cyan-300">
+          {label}
         </span>
       </div>
     </div>

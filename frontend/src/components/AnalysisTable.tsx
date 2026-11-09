@@ -56,7 +56,7 @@ export default function AnalysisTable({
               Konten
             </th>
             <th className="px-4 py-3 font-medium">Status</th>
-            <th className="px-4 py-3 font-medium">Skor risiko</th>
+            <th className="px-4 py-3 font-medium">Indeks narasi</th>
             <th className="px-4 py-3 font-medium">Dianalisis</th>
             <th className="px-5 py-3 sm:px-6" aria-label="Aksi" />
           </tr>
@@ -99,23 +99,12 @@ export default function AnalysisTable({
               <td className="px-4 py-4">
                 <VerdictBadge verdict={item.verdict} short />
               </td>
-              <td className="w-[150px] px-4 py-4">
+              <td className="w-[130px] px-4 py-4">
                 <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "w-7 text-sm font-semibold tabular-nums",
-                      item.risk_score >= 75
-                        ? "text-rose-300"
-                        : item.risk_score >= 50
-                          ? "text-orange-300"
-                          : item.risk_score >= 25
-                            ? "text-amber-300"
-                            : "text-emerald-300",
-                    )}
-                  >
+                  <span className="w-7 text-sm font-semibold tabular-nums text-cyan-200">
                     {item.risk_score}
                   </span>
-                  <ScoreBar score={item.risk_score} level={item.risk_level} className="w-16" />
+                  <ScoreBar score={item.risk_score} className="w-16" />
                 </div>
               </td>
               <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500">

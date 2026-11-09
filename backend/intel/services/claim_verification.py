@@ -207,6 +207,9 @@ def _validate(
                     "url": item.url,
                     "publisher": item.publisher,
                     "snippet": (item.snippet or "")[:280],
+                    # Tanggal terbit dari hasil pencarian dipakai EBDE untuk
+                    # menghitung kebaruan bukti, bukan nilai netral.
+                    "published_date": item.published_date,
                 }
             )
             if len(citations) >= max(1, settings.CLAIM_CHECK_MAX_CITATIONS):

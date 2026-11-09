@@ -15,7 +15,7 @@ from intel.analysis.pipeline import (
     assess_signals,
     run_analysis,
 )
-from intel.analysis.text_stats import make_signal
+from intel.analysis.text_stats import make_signal, risk_level
 
 from .test_signals import HOAX_TEXT
 
@@ -63,7 +63,8 @@ class IndoBERTConfigTests(TestCase):
 
 
 class IndoBERTPipelineTests(TestCase):
-    def test_model_signal_does_not_change_verdict(self) -> None:
+    @override_settings(INDOBERT_RISK_WEIGHT=0.3)
+    def test_model_signal_contributes_to_risk_score(self) -> None:
         baseline = run_analysis(text=HOAX_TEXT, title=None)
         with mock.patch.object(indobert, "analyze_with_model", return_value=MODEL_SIGNAL):
             outcome = run_analysis(text=HOAX_TEXT, title=None)
@@ -71,15 +72,28 @@ class IndoBERTPipelineTests(TestCase):
         self.assertEqual(
             [signal.category for signal in outcome.signals], ["hoax", "indobert"]
         )
-        self.assertEqual(outcome.risk_score, baseline.risk_score)
+        expected = round(baseline.risk_score * 0.7 + MODEL_SIGNAL.score * 0.3)
+        self.assertEqual(outcome.risk_score, expected)
+        self.assertEqual(outcome.risk_level, risk_level(outcome.risk_score))
+        # Verdict tetap ditetapkan EBDE, bukan oleh skor narasi.
         self.assertEqual(outcome.verdict, baseline.verdict)
+        self.assertIsNone(outcome.decision)
+        self.assertEqual(outcome.model_used, indobert.MODEL_VERSION)
+        self.assertIn(MODEL_LIMITATION, outcome.limitations)
+        self.assertIn("IndoBERT", outcome.summary)
+        self.assertIn("30%", outcome.summary)
+
+    @override_settings(INDOBERT_RISK_WEIGHT=0)
+    def test_zero_weight_keeps_heuristic_score(self) -> None:
+        baseline = run_analysis(text=HOAX_TEXT, title=None)
+        with mock.patch.object(indobert, "analyze_with_model", return_value=MODEL_SIGNAL):
+            outcome = run_analysis(text=HOAX_TEXT, title=None)
+
+        self.assertEqual(outcome.risk_score, baseline.risk_score)
         self.assertEqual(
             outcome.narrative_verdict,
             assess_signals({"hoax": baseline.signals[0]}).verdict,
         )
-        self.assertEqual(outcome.model_used, indobert.MODEL_VERSION)
-        self.assertIn(MODEL_LIMITATION, outcome.limitations)
-        self.assertIn("IndoBERT", outcome.summary)
 
     def test_model_failure_keeps_heuristic_analysis(self) -> None:
         with mock.patch.object(

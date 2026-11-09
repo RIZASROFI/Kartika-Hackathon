@@ -13,8 +13,10 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 - **Hoax & fact-checking signal** — atribusi sumber, sensasionalisme, tekanan menyebarkan,
   klaim numerik tanpa sumber, ekstraksi kandidat klaim.
 - **Sinyal model IndoBERT lokal (opsional)** — paket `backend/models/cynteltika_indobert_v1`
-  (tersedia di repo lewat Git LFS) dinilai per jendela 512 token sebagai sinyal **pembanding**. Skornya tidak
-  pernah dipakai sebagai bukti dan tidak mengubah verdict; panel detail menampilkan keduanya.
+  (tersedia di repo lewat Git LFS) dinilai per jendela 512 token. Skornya ikut menimbang
+  indeks pola narasi (`risk_score`) dengan bobot `INDOBERT_RISK_WEIGHT` (bawaan 30%), tetapi
+  tidak pernah dipakai sebagai bukti dan tidak mengubah verdict; panel detail menampilkan
+  keduanya.
 - **Pemeriksaan fakta eksternal** — Google Fact Check Tools API dan basis data **MAFINDO
   Yudistira** dicari untuk judul dan klaim utama, hasilnya disaring relevansinya, di-cache
   7 hari, dan menjadi bukti bagi Evidence-Based Decision Engine.
@@ -25,7 +27,7 @@ Backend memakai **Django + Django REST Framework**, frontend memakai **React + T
 - **Evidence-Based Decision Engine (EBDE)** — verdict akhir dihitung dari bukti eksternal:
   relevansi × kredibilitas penerbit × kebaruan, dihitung per domain independen (duplikat tidak
   dihitung), konflik antarbukti dideteksi, dan verdict ditahan bila bukti belum cukup.
-  `risk_score` narasi disimpan terpisah dan tidak dapat menggeser verdict.
+  Indeks pola narasi (`risk_score`) disimpan terpisah dan tidak dapat menggeser verdict.
 - **Dashboard** — KPI, distribusi status, profil sinyal, analisis terbaru.
 - **Riwayat & detail analisis** — filter status, ringkasan, kartu sinyal, klaim,
   sumber/bukti, dan daftar batasan.
@@ -243,10 +245,11 @@ Analisis menyimpan **dua keluaran yang tidak saling menggantikan**:
 
 | Keluaran | Sumber | Arti |
 | --- | --- | --- |
-| `risk_score` 0–100 | sinyal heuristik (IndoBERT hanya pembanding) | pola penyebaran: atribusi lemah, sensasionalisme, tekanan menyebarkan |
+| `risk_score` 0–100 | heuristik + IndoBERT (bobot model 30%) | indeks pola narasi: atribusi lemah, sensasionalisme, tekanan menyebarkan |
 | `verdict` | Evidence-Based Decision Engine (EBDE) | status klaim berdasarkan bukti eksternal |
 
-Tingkat risiko: rendah 0–24, sedang 25–49, tinggi 50–74, kritis 75–100.
+Angka `risk_score` sengaja tidak diberi band rendah/sedang/tinggi: nilainya bukan penilaian
+bahaya, tidak dibandingkan dengan verdict, dan angka rendah tidak berarti konten aman.
 
 Sinyal narasi tidak pernah menjadi bukti. Verdict hanya ditetapkan EBDE dari temuan cek fakta dan
 sitasi pencarian, dengan tiap bukti diberi bobot:
@@ -277,7 +280,7 @@ bila tidak ada sisi pembanding, ≥2 domain independen dengan bobot ≥0,40 suda
 tipis atau tidak konvergen; **Belum Dapat Dinilai** bila tidak ada bukti. Alasan penahanan
 disimpan di `decision.insufficient_reason`.
 
-Bobot sinyal risiko (bukan bukti): tanpa atribusi yang dapat ditelusuri (+20), sumber kabur seperti “kabarnya”
+Bobot indeks pola narasi (bukan bukti): tanpa atribusi yang dapat ditelusuri (+20), sumber kabur seperti “kabarnya”
 atau “orang dalam” (+9 per frasa, maks 27), bahasa sensasional (maks 18), tekanan menyebarkan
 (maks 24), pernyataan absolut (maks 10), angka tanpa atribusi (+12), tanpa rujukan lembaga
 resmi (+10), serta otoritas semu — nama lembaga tanpa pernyataan resmi (+10). Atribusi yang
@@ -315,6 +318,10 @@ Detail metode dan batasan tersedia di halaman **Metodologi** pada aplikasi.
 - URL media sosial (TikTok, Instagram, Facebook, X/Twitter) tidak di-ingest otomatis; tempelkan
   teks/caption-nya sebagai teks manual agar analisis berjalan.
 - Leksikon dapat melewatkan sarkasme, kutipan berita, atau konteks budaya.
+- Indeks pola narasi memadukan heuristik dan IndoBERT (bobot model 30%, diatur lewat
+  `INDOBERT_RISK_WEIGHT`). Model dilatih pada korpus terbatas, jadi angka bisa berubah karena gaya
+  penulisan; bila model tidak tersedia, indeks kembali sepenuhnya heuristik. Indeks ini tidak
+  punya band aman/berbahaya.
 - Kesetaraan klaim dinilai model bahasa, sehingga temuan yang membahas klaim lain bisa lolos atau
   justru ditandai konteks secara keliru; analis tetap harus membuka tautan cek fakta.
 - Kredibilitas penerbit berasal dari tabel heuristik; domain tak dikenal dinilai 0,50 dan domain

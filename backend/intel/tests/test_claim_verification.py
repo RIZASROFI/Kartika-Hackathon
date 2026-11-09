@@ -30,6 +30,7 @@ EVIDENCE = [
         url="https://cekfakta.example.org/bansos",
         publisher="cekfakta.example.org",
         snippet="Pemerintah menegaskan informasi bansos Rp 5 juta lewat link adalah hoaks.",
+        published_date="2026-10-01T00:00:00Z",
     ),
     WebEvidence(
         title="Penjelasan program bansos resmi",
@@ -188,6 +189,11 @@ class ClaimVerificationValidationTests(TestCase):
         self.assertEqual(
             [citation["url"] for citation in result.claims[0].citations],
             ["https://cekfakta.example.org/bansos"],
+        )
+        # Tanggal terbit ikut diteruskan agar EBDE dapat menghitung kebaruan.
+        self.assertEqual(
+            result.claims[0].citations[0]["published_date"],
+            "2026-10-01T00:00:00Z",
         )
         # Status tanpa sitasi valid diturunkan agar model tidak bisa mengarang dukungan.
         self.assertEqual(result.claims[1].status, STATUS_TIDAK_CUKUP)

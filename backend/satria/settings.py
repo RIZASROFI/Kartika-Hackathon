@@ -226,9 +226,12 @@ LLM_MAX_TOKENS = env_int("LLM_MAX_TOKENS", 2048)
 
 # --- Sinyal model IndoBERT lokal (opsional) ---
 # Nonaktif otomatis saat pengujian agar suite tidak memuat bobot 476 MB.
-# Sinyal ini hanya pembanding: verdict tetap ditentukan mesin heuristik.
+# Sinyal ini ikut menimbang indeks pola narasi; verdict tetap ditentukan bukti (EBDE).
 # Bila folder model tidak ada, sinyal dilewati tanpa mengganggu analisis.
 INDOBERT_ENABLED = env_bool("INDOBERT_ENABLED", True) and not RUNNING_TESTS
+# Bobot model dalam indeks pola narasi (0 = murni heuristik). Heuristik tetap
+# dominan karena model peka terhadap gaya penulisan.
+INDOBERT_RISK_WEIGHT = max(0.0, min(1.0, env_float("INDOBERT_RISK_WEIGHT", 0.3)))
 INDOBERT_MODEL_DIR = Path(
     os.getenv("INDOBERT_MODEL_DIR") or (BASE_DIR / "models" / "cynteltika_indobert_v1")
 )

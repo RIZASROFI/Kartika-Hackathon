@@ -3,8 +3,8 @@
 Tiga tahap dipisah tegas:
 
 1. **Analisis narasi** (modul ini): sinyal heuristik dan IndoBERT menghasilkan
-   risk score — pola atribusi, sensasionalisme, dan penyebaran. Tahap ini
-   *tidak* menetapkan benar/salah.
+   indeks pola narasi — pola atribusi, sensasionalisme, dan penyebaran. Tahap
+   ini *tidak* menetapkan benar/salah.
 2. **Verifikasi fakta** (`services/factcheck.py`, `services/claim_verification.py`):
    MAFINDO, Google Fact Check, Exa, dan model bahasa mengumpulkan bukti.
 3. **Keputusan** (`analysis/ebde.py`): Evidence-Based Decision Engine menilai
@@ -66,13 +66,28 @@ FACTCHECK_LIMITATION = {
 MODEL_LIMITATION = (
     "Sinyal model IndoBERT dilatih pada korpus terbatas (TurnBackHoax sebagai kelas hoax, "
     "Tempo/CNN/Kompas sebagai kelas fakta) sehingga skornya peka terhadap gaya penulisan; "
-    "sinyal ini tidak dipakai sebagai bukti kebenaran isi."
+    "skor ini ikut menimbang indeks pola narasi, tetapi tidak dipakai sebagai bukti "
+    "kebenaran isi."
 )
 
 NARRATIVE_LIMITATION = (
     "Sinyal heuristik dan IndoBERT mengukur pola narasi (atribusi, sensasionalisme, gaya "
     "penulisan), bukan kebenaran isi; keduanya tidak menjadi bukti dalam keputusan akhir."
 )
+
+
+def _blend_risk_score(*, heuristic: float, model: float, weight: float) -> int:
+    """Padukan skor heuristik dan model dengan bobot eksplisit, dibatasi 0..100."""
+    blended = heuristic * (1.0 - weight) + model * weight
+    return int(round(max(0.0, min(100.0, blended))))
+
+
+def _blend_limitation(weight: float) -> str:
+    return (
+        "Indeks pola narasi memadukan sinyal heuristik dan IndoBERT "
+        f"(bobot model {weight:.0%}); model peka terhadap gaya penulisan, sehingga skor "
+        "dapat berubah tanpa perubahan kebenaran isi."
+    )
 
 
 @dataclass
@@ -113,14 +128,13 @@ def _decide_narrative_verdict(hoax_score: int) -> str:
 def _build_narrative_summary(
     *,
     risk_score: int,
-    level: str,
     signal: SignalResult,
 ) -> str:
     """Ringkasan narasi tanpa status akhir — status ditetapkan EBDE."""
     return (
-        f"Skor risiko {risk_score}/100 ({level}) mengukur pola penyebaran dan kelemahan "
-        f"atribusi, bukan kebenaran isi. Sinyal {signal.title} mencatat {signal.score}/100 "
-        f"dengan tingkat {signal.level}."
+        f"Indeks pola narasi {risk_score}/100 mengukur pola penyebaran dan kelemahan "
+        f"atribusi, bukan kebenaran isi maupun tingkat keamanan konten. Sinyal "
+        f"{signal.title} mencatat {signal.score}/100."
     )
 
 
@@ -145,7 +159,6 @@ def assess_signals(signals: dict[str, SignalResult]) -> Assessment:
     verdict = _decide_narrative_verdict(risk_score)
     summary = _build_narrative_summary(
         risk_score=risk_score,
-        level=level,
         signal=signal,
     )
     return Assessment(
@@ -159,7 +172,7 @@ def assess_signals(signals: dict[str, SignalResult]) -> Assessment:
 
 
 def _model_signal(text: str, title: str | None) -> SignalResult | None:
-    """Sinyal pembanding; kegagalan apa pun tidak boleh menjatuhkan analisis."""
+    """Sinyal model untuk komponen skor; kegagalan tidak boleh menjatuhkan analisis."""
     try:
         return indobert.analyze_with_model(text, title)
     except Exception as exc:  # noqa: BLE001 - sinyal opsional tidak memutus pipeline
@@ -177,29 +190,48 @@ def run_analysis(*, text: str, title: str | None) -> AnalysisOutcome:
     assessment = assess_signals({"hoax": hoax_signal})
     signals = [hoax_signal]
     limitations = list(assessment.limitations)
-    summary = assessment.summary
+    risk_score = assessment.risk_score
+    level = assessment.risk_level
+    narrative_verdict = assessment.verdict
+    summary = _build_narrative_summary(risk_score=risk_score, signal=hoax_signal)
 
     model_signal = _model_signal(text, title)
+    weight = indobert.risk_weight() if model_signal is not None else 0.0
     if model_signal is not None:
         signals.append(model_signal)
         limitations.append(MODEL_LIMITATION)
-        summary = (
-            f"{summary} Model IndoBERT lokal menilai konten ini {model_signal.score}/100 "
-            "ke arah hoax (pembanding, bukan bukti maupun penentu status)."
-        )
+        if weight > 0:
+            risk_score = _blend_risk_score(
+                heuristic=assessment.risk_score, model=model_signal.score, weight=weight
+            )
+            level = risk_level(risk_score)
+            narrative_verdict = _decide_narrative_verdict(risk_score)
+            limitations.append(_blend_limitation(weight))
+        summary = _build_narrative_summary(risk_score=risk_score, signal=hoax_signal)
+        if weight > 0:
+            summary += (
+                f" Model IndoBERT lokal menilai konten ini {model_signal.score}/100 ke arah "
+                f"hoax dan menimbang {weight:.0%} dari indeks pola narasi; sisanya dari sinyal "
+                "heuristik. Model tetap bukan bukti maupun penentu status."
+            )
+        else:
+            summary += (
+                f" Model IndoBERT lokal menilai konten ini {model_signal.score}/100 ke arah "
+                "hoax, tetapi tidak diikutkan dalam indeks pola narasi (bobot 0)."
+            )
 
     return AnalysisOutcome(
         signals=signals,
         claims=claims,
         # Status sementara: keputusan akhir diisi EBDE setelah bukti terkumpul.
         verdict=VERDICT_BELUM_DAPAT_DINILAI,
-        risk_score=assessment.risk_score,
-        risk_level=assessment.risk_level,
+        risk_score=risk_score,
+        risk_level=level,
         confidence=assessment.confidence,
         summary=summary,
         limitations=limitations,
         model_used=indobert.MODEL_VERSION if model_signal is not None else None,
-        narrative_verdict=assessment.verdict,
+        narrative_verdict=narrative_verdict,
     )
 
 

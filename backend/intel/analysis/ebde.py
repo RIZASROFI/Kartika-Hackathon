@@ -171,6 +171,17 @@ CREDIBILITY_RULES: tuple[tuple[tuple[str, ...], float], ...] = (
 )
 DEFAULT_CREDIBILITY = 0.50
 
+# Skor tertinggi yang mungkin diraih tiap dimensi. Dikirim ke UI agar angka
+# seperti 0.85 dapat dibaca sebagai 0.85 dari 0.95, bukan dari 1.00 yang tidak
+# mungkin dicapai karena tier kredibilitas tertinggi bernilai 0.95.
+CREDIBILITY_MAX = max(score for _keywords, score in CREDIBILITY_RULES)
+SCORE_MAX = {
+    "relevance": 1.0,
+    "credibility": CREDIBILITY_MAX,
+    "recency": 1.0,
+    "weight": round(CREDIBILITY_MAX, 2),
+}
+
 FACTCHECK_STANCES = {
     "hoax": STANCE_REFUTE,
     "fakta": STANCE_SUPPORT,
@@ -444,6 +455,9 @@ def build_evidence_items(
             publisher = str(citation.get("publisher") or "")
             title_text = str(citation.get("title") or "")
             snippet = str(citation.get("snippet") or "")
+            # Tanggal terbit boleh kosong pada hasil pencarian; bila ada, kebaruan
+            # dihitung nyata, bila tidak tetap memakai nilai netral.
+            published_at = str(citation.get("published_date") or "") or None
             items.append(
                 EvidenceItem(
                     title=normalize_whitespace(title_text or url)[:512],
@@ -464,9 +478,9 @@ def build_evidence_items(
                         3,
                     ),
                     credibility=credibility_score(publisher, url),
-                    recency=NEUTRAL_RECENCY,
+                    recency=recency_score(published_at, now=now),
                     group=independence_group(url=url, publisher=publisher),
-                    published_at=None,
+                    published_at=published_at,
                 )
             )
 
@@ -516,6 +530,7 @@ class EvidenceDecision:
             "partial_groups": self.partial_groups,
             "independent_groups": self.independent_groups,
             "item_count": len(self.items),
+            "scales": dict(SCORE_MAX),
             "narrative_risk": self.narrative_risk,
             "provider_status": self.provider_status,
             "items": [item.to_json() for item in self.items],

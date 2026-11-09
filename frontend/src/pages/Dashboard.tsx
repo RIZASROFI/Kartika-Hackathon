@@ -119,7 +119,7 @@ export default function Dashboard() {
         dan memerlukan verifikasi analis sebelum dijadikan dasar tindakan.
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <StatCard
           icon={FileSearch}
           label="Total analisis"
@@ -133,13 +133,6 @@ export default function Dashboard() {
           value={totals.high_risk}
           hint={`${formatPercent(highRiskShare)} dari seluruh analisis berskor ≥ 50`}
           accent="border-rose-400/20 bg-rose-400/10 text-rose-300"
-        />
-        <StatCard
-          icon={Gauge}
-          label="Rata-rata risiko"
-          value={totals.average_risk.toFixed(1)}
-          hint="Risiko narasi 0–100, terpisah dari verdict fakta"
-          accent="border-amber-400/20 bg-amber-400/10 text-amber-300"
         />
       </div>
 

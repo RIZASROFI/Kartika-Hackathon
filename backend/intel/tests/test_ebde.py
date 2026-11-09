@@ -35,6 +35,23 @@ from intel.services.claim_match import CLAIM_MATCH_LIMITATION
 from intel.services.factcheck import FactCheckError
 from intel.services.llm import LLMError
 
+
+class DecisionScaleJsonTests(TestCase):
+    """UI menulis bobot sebagai "nilai/maksimum"; skalanya harus ikut terkirim."""
+
+    def test_decision_json_exposes_dimension_maxima(self):
+        decision = assess_evidence(
+            items=[make_item(url="https://contoh.com/1", publisher="contoh.com")]
+        )
+        payload = decision.to_json()
+        assert payload["scales"] == {
+            "relevance": 1.0,
+            "credibility": 0.95,
+            "recency": 1.0,
+            "weight": 0.95,
+        }
+        assert payload["items"][0]["credibility"] <= payload["scales"]["credibility"]
+
 ARTICLE = (
     "Bantuan sosial Rp 5 juta untuk semua warga bisa diambil lewat link berikut. "
     "Buruan daftar sebelum kuota habis! Cukup isi nama dan nomor rekening. "
@@ -178,6 +195,42 @@ class EvidenceScoringTests(TestCase):
         stances = {item.url: item.stance for item in items}
         self.assertEqual(stances["https://turnbackhoax.id/bansos"], STANCE_REFUTE)
         self.assertEqual(stances["https://kominfo.go.id/bansos"], STANCE_SUPPORT)
+
+    def test_claim_citation_published_date_drives_recency(self) -> None:
+        """Tanggal terbit hasil pencarian harus dipakai, bukan nilai netral."""
+        published = "2026-10-01T00:00:00Z"
+        claim = SimpleNamespace(
+            claim="Bantuan sosial Rp 5 juta diambil lewat link pendaftaran",
+            status="didukung",
+            citations=[
+                {
+                    "title": "Bantuan sosial Rp 5 juta diambil lewat link pendaftaran",
+                    "url": "https://kominfo.go.id/bansos",
+                    "publisher": "kominfo.go.id",
+                    "snippet": "Bantuan sosial Rp 5 juta diambil lewat link pendaftaran.",
+                    "published_date": published,
+                },
+                {
+                    "title": "Bantuan sosial Rp 5 juta diambil lewat link pendaftaran",
+                    "url": "https://tempo.co/bansos",
+                    "publisher": "tempo.co",
+                    "snippet": "Bantuan sosial Rp 5 juta diambil lewat link pendaftaran.",
+                },
+            ],
+        )
+
+        items = build_evidence_items(claim_results=[claim], text=ARTICLE)
+        by_url = {item.url: item for item in items}
+
+        dated = by_url["https://kominfo.go.id/bansos"]
+        self.assertEqual(dated.published_at, published)
+        self.assertAlmostEqual(
+            dated.recency, recency_score(published), places=4
+        )
+        # Tanpa tanggal terbit, kebaruan tetap memakai nilai netral.
+        undated = by_url["https://tempo.co/bansos"]
+        self.assertIsNone(undated.published_at)
+        self.assertAlmostEqual(undated.recency, 0.6, places=4)
 
     def test_partial_rating_becomes_partial_stance(self) -> None:
         class Hit:

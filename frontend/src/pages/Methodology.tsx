@@ -15,8 +15,8 @@ import {
 import { Link } from "react-router-dom";
 
 import { Card, VerdictBadge } from "../components/ui";
-import { CATEGORY_META, LEVEL_META, VERDICT_META } from "../lib/labels";
-import type { RiskLevel, SignalCategory } from "../lib/types";
+import { CATEGORY_META, VERDICT_META } from "../lib/labels";
+import type { SignalCategory } from "../lib/types";
 
 const PIPELINE = [
   {
@@ -81,8 +81,8 @@ const SERVICES = [
   },
   {
     icon: ScanText,
-    name: "IndoBERT lokal (pembanding)",
-    text: "Mengklasifikasi gaya narasi per jendela 512 token. Skornya ditampilkan sebagai pembanding dan tidak pernah dipakai sebagai bukti kebenaran.",
+    name: "IndoBERT lokal (30% indeks narasi)",
+    text: "Mengklasifikasi gaya narasi per jendela 512 token. Skornya ikut menimbang indeks pola narasi (bobot 30%), ditampilkan terpisah, dan tidak pernah dipakai sebagai bukti kebenaran.",
   },
   {
     icon: Globe,
@@ -106,9 +106,30 @@ const SERVICES = [
   },
 ];
 
+// Status yang ditampilkan di halaman ini. EBDE tetap dapat menghasilkan
+// "campuran" dan "belum_dapat_dinilai" (bukti bertentangan atau kosong); status
+// itu hanya tidak dipublikasikan sebagai daftar di halaman metodologi.
+const PUBLISHED_STATUSES = [
+  "terindikasi_fakta",
+  "terindikasi_hoaks",
+  "perlu_verifikasi",
+] as const;
+
 const DIMENSIONS: Array<{ key: SignalCategory; weight: string }> = [
-  { key: "hoax", weight: "penentu risiko" },
-  { key: "indobert", weight: "pembanding" },
+  { key: "hoax", weight: "70% indeks" },
+  { key: "indobert", weight: "30% indeks" },
+];
+
+const INDEX_COMPONENTS: Array<{ label: string; points: string }> = [
+  { label: "Tanpa atribusi yang dapat ditelusuri", points: "+20" },
+  { label: "Sumber kabur (kabarnya, orang dalam)", points: "+9/frasa, maks +27" },
+  { label: "Bahasa sensasional", points: "maks +18" },
+  { label: "Dorongan menyebarkan", points: "maks +24" },
+  { label: "Pernyataan absolut", points: "maks +10" },
+  { label: "Angka tanpa atribusi", points: "+12" },
+  { label: "Tanpa rujukan lembaga resmi", points: "+10" },
+  { label: "Otoritas semu (lembaga tanpa kutipan)", points: "+10" },
+  { label: "Atribusi terlacak / rujukan resmi", points: "−6 s.d. −12" },
 ];
 
 const LIMITATIONS = [
@@ -180,9 +201,9 @@ export default function Methodology() {
           </h2>
         </div>
         <p className="max-w-3xl text-[11px] leading-relaxed text-slate-500">
-          Satu konten melewati dua jalur paralel. Jalur narasi hanya menghasilkan skor risiko;
-          jalur bukti hanya menghasilkan status. Keduanya tidak pernah saling menggantikan, dan
-          IndoBERT berada di luar keduanya.
+          Satu konten melewati dua jalur paralel. Jalur narasi menghasilkan indeks pola narasi
+          dari heuristik plus IndoBERT (bobot model 30%); jalur bukti menghasilkan status.
+          Keduanya tidak pernah saling menggantikan, dan IndoBERT tidak menyentuh jalur bukti.
         </p>
 
         <div className="mt-5 space-y-3">
@@ -216,7 +237,7 @@ export default function Methodology() {
               <div className="mt-3 rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2">
                 <p className="text-[10px] uppercase tracking-wide text-slate-500">Menghasilkan</p>
                 <p className="text-xs font-semibold text-cyan-200">
-                  skor risiko 0–100 + level
+                  indeks pola narasi 0–100
                 </p>
               </div>
               <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
@@ -275,16 +296,16 @@ export default function Methodology() {
               <ScanText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-200">
-                  IndoBERT lokal · di luar kedua jalur
+                  IndoBERT lokal · 30% indeks narasi
                 </p>
                 <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
-                  Sinyal pembanding dari gaya penulisan. Disimpan dan ditampilkan di detail, tetapi
-                  tidak masuk skor risiko maupun keputusan.
+                  Mengklasifikasi gaya penulisan dan ikut menimbang indeks pola narasi (bobot
+                  30%). Sinyal ini tidak pernah masuk jalur bukti maupun verdict.
                 </p>
               </div>
             </div>
             <span className="chip shrink-0 border-white/10 bg-white/5 text-slate-400">
-              tidak memutus
+              bukan bukti
             </span>
           </div>
 
@@ -317,10 +338,11 @@ export default function Methodology() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-white/5 bg-white/[0.015] px-3 py-2.5">
               <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
-                Kolom “Skor risiko”
+                Kolom “Indeks narasi”
               </p>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-                Dari jalur narasi: prioritas triase, bukan peluang hoaks dan bukan status.
+                Dari jalur narasi: pola penyebaran 0–100, tanpa band aman/berbahaya dan bukan
+                status.
               </p>
             </div>
             <div className="rounded-xl border border-white/5 bg-white/[0.015] px-3 py-2.5">
@@ -336,7 +358,8 @@ export default function Methodology() {
 
         <p className="mt-4 border-t border-white/5 pt-3 text-[11px] leading-relaxed text-slate-500">
           Gemini hanya memberi arah bukti, bukan verdict. Bila Exa atau Gemini tidak dapat
-          dihubungi, EBDE menahan status alih-alih menebak, sementara skor risiko tetap tersedia.
+          dihubungi, EBDE menahan status alih-alih menebak, sementara indeks pola narasi tetap
+          tersedia.
         </p>
       </Card>
 
@@ -378,7 +401,7 @@ export default function Methodology() {
         <Card>
           <h2 className="text-sm font-semibold text-white">Sinyal hoaks &amp; fakta</h2>
           <p className="mt-1 text-xs text-slate-500">
-            Skala 0–100 dengan label tingkat risiko.
+            Skala 0–100 per indikator; angkanya bukan peluang hoaks.
           </p>
           <div className="mt-4 space-y-3">
             {DIMENSIONS.map((dimension) => {
@@ -408,38 +431,38 @@ export default function Methodology() {
             })}
           </div>
           <div className="mt-4 rounded-xl border border-cyan-400/10 bg-cyan-400/[0.03] p-3.5 text-[11px] leading-relaxed text-cyan-100/60">
-            <span className="font-semibold text-cyan-200">Dua angka yang berbeda:</span> skor
-            risiko (0–100) mengukur pola penyebaran dari sinyal narasi. Verdict faktual
-            (Terindikasi Fakta/Hoaks, Campuran, Perlu Verifikasi, Belum Dapat Dinilai) dihitung
-            EBDE dari bukti eksternal saja, sehingga arah keduanya bisa berbeda.
+            <span className="font-semibold text-cyan-200">
+              Dua keluaran yang tidak dibandingkan:
+            </span>{" "}
+            indeks pola narasi (0–100) mengukur pola penyebaran dan sengaja tidak diberi band
+            rendah/sedang/tinggi. Verdict faktual (Terindikasi Fakta/Hoaks, Perlu Verifikasi)
+            dihitung EBDE dari bukti eksternal saja, sehingga keduanya bisa bergerak berlawanan:
+            narasi yang rapi bisa berindeks rendah meski isinya hoaks.
           </div>
         </Card>
 
         <div className="space-y-6">
           <Card>
-            <h2 className="text-sm font-semibold text-white">Ambang tingkat risiko</h2>
+            <h2 className="text-sm font-semibold text-white">Komposisi indeks pola narasi</h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+              Heuristik menambah poin untuk kelemahan atribusi dan penanda penyebaran; IndoBERT
+              menimbang 30%. Tidak ada band rendah/sedang/tinggi karena angka ini bukan penilaian
+              bahaya.
+            </p>
             <ul className="mt-4 space-y-2">
-              {(Object.keys(LEVEL_META) as RiskLevel[]).map((level) => {
-                const ranges: Record<RiskLevel, string> = {
-                  rendah: "0–24",
-                  sedang: "25–49",
-                  tinggi: "50–74",
-                  kritis: "75–100",
-                };
-                return (
-                  <li
-                    key={level}
-                    className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.015] px-3 py-2"
-                  >
-                    <span className={`chip ${LEVEL_META[level].badge}`}>
-                      {LEVEL_META[level].label}
-                    </span>
-                    <span className="font-mono text-[11px] text-slate-500">
-                      {ranges[level]}
-                    </span>
-                  </li>
-                );
-              })}
+              {INDEX_COMPONENTS.map((component) => (
+                <li
+                  key={component.label}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/[0.015] px-3 py-2"
+                >
+                  <span className="text-[11px] leading-relaxed text-slate-400">
+                    {component.label}
+                  </span>
+                  <span className="shrink-0 font-mono text-[11px] text-slate-500">
+                    {component.points}
+                  </span>
+                </li>
+              ))}
             </ul>
           </Card>
 
@@ -447,17 +470,11 @@ export default function Methodology() {
             <h2 className="text-sm font-semibold text-white">Status analisis</h2>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
               Ditetapkan EBDE. Ambang: bobot sisi dominan ≥ 0,60 dan dominasi ≥ 70%; bila tidak
-              ada pembanding, dua domain independen dengan bobot ≥ 0,40 sudah memutuskan; konflik
-              bila sisi lemah ≥ 50% sisi kuat; minimal dua domain independen (kecuali satu temuan
-              lembaga cek fakta dengan kredibilitas ≥ 0,90 dan relevansi ≥ 0,60).
+              ada pembanding, dua domain independen dengan bobot ≥ 0,40 sudah memutuskan; minimal
+              dua domain independen (kecuali satu temuan lembaga cek fakta dengan kredibilitas ≥
+              0,90 dan relevansi ≥ 0,60).
             </p>
-            <ul className="mt-3 space-y-2.5">
-              {(Object.keys(VERDICT_META) as Array<keyof typeof VERDICT_META>)
-                .filter(
-                  (verdict) =>
-                    verdict !== "terindikasi_menyesatkan" && verdict !== "risiko_rendah",
-                )
-                .map((verdict) => (
+            <ul className="mt-3 space-y-2.5">              {PUBLISHED_STATUSES.map((verdict) => (
                 <li key={verdict} className="space-y-1">
                   <VerdictBadge verdict={verdict} short />
                   <p className="text-[11px] leading-relaxed text-slate-500">

@@ -79,8 +79,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             </span>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            Skor risiko dari sinyal heuristik & IndoBERT; verdict dari bukti (EBDE). Verifikasi
-            analis tetap diperlukan.
+            Indeks pola narasi dari sinyal heuristik & IndoBERT; verdict dari bukti (EBDE).
+            Verifikasi analis tetap diperlukan.
           </p>
         </div>
         <p className="px-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">

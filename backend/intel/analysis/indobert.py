@@ -1,9 +1,10 @@
-"""Sinyal pembanding dari model IndoBERT lokal `cynteltika_indobert_v1`.
+"""Sinyal model IndoBERT lokal `cynteltika_indobert_v1`.
 
-Model ini **tidak** menentukan verdict analisis. `pipeline.assess_signals`
-tetap memakai sinyal heuristik sebagai satu-satunya penentu status, karena
-model dilatih pada dua kelompok penerbit (TurnBackHoax vs media arus utama)
-sehingga skornya peka terhadap gaya penulisan, bukan hanya kebenaran isi.
+Model ini **tidak** menentukan verdict analisis. Skornya ikut menimbang indeks
+pola narasi dengan bobot `INDOBERT_RISK_WEIGHT` (bawaan 0,30), sementara
+verdict tetap ditetapkan EBDE dari bukti. Bobot heuristik sengaja lebih besar
+karena model dilatih pada dua kelompok penerbit (TurnBackHoax vs media arus
+utama) sehingga skornya peka terhadap gaya penulisan, bukan hanya kebenaran isi.
 
 Bobot dimuat sekali per proses (lazy, thread-safe). Ketergantungan berat
 (`torch`, `transformers`) diimpor di dalam loader agar `manage.py` tetap jalan
@@ -84,6 +85,18 @@ def is_available() -> bool:
         return False
     hf_dir, _ = _paths()
     return (hf_dir / "config.json").is_file() and (hf_dir / "model.safetensors").is_file()
+
+
+DEFAULT_RISK_WEIGHT = 0.30
+
+
+def risk_weight() -> float:
+    """Bobot sinyal model dalam indeks pola narasi (0 = hanya heuristik)."""
+    try:
+        weight = float(_setting("INDOBERT_RISK_WEIGHT", DEFAULT_RISK_WEIGHT))
+    except (TypeError, ValueError):
+        return DEFAULT_RISK_WEIGHT
+    return max(0.0, min(1.0, weight))
 
 
 def _read_labels(meta_dir: Path) -> dict[int, str]:
@@ -203,8 +216,8 @@ def _predict(bundle: ModelBundle, texts: list[str]) -> list[list[float]]:
 def _explanation(score: float) -> str:
     if score >= VERDICT_HOAX_THRESHOLD:
         return (
-            "Model IndoBERT lokal menilai konten ini cenderung hoax. Skor ini hanya "
-            "pembanding: status analisis tetap ditentukan sinyal heuristik."
+            "Model IndoBERT lokal menilai konten ini cenderung hoax. Skor ini ikut "
+            "menimbang indeks pola narasi, tetapi status faktual tetap ditentukan bukti."
         )
     if score >= VERDICT_VERIFY_THRESHOLD:
         return (
@@ -290,7 +303,7 @@ def analyze_with_model(text: str, title: str | None = None) -> SignalResult | No
     details.extend(
         [
             f"Versi model {MODEL_VERSION}, perangkat {bundle.device}.",
-            "Skor bersifat pembanding dan tidak mengubah verdict analisis.",
+            "Skor ikut menimbang indeks pola narasi; verdict tetap ditentukan bukti (EBDE).",
         ]
     )
 

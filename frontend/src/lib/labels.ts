@@ -1,6 +1,6 @@
 import { BrainCircuit, Newspaper, type LucideIcon } from "lucide-react";
 
-import type { RiskLevel, SignalCategory, Verdict } from "./types";
+import type { SignalCategory, Verdict } from "./types";
 
 export interface VerdictMeta {
   label: string;
@@ -78,29 +78,6 @@ export const VERDICT_META: Record<Verdict, VerdictMeta> = {
   },
 };
 
-export const LEVEL_META: Record<RiskLevel, { label: string; badge: string; bar: string }> = {
-  rendah: {
-    label: "Rendah",
-    badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
-    bar: "bg-emerald-400",
-  },
-  sedang: {
-    label: "Sedang",
-    badge: "border-amber-400/30 bg-amber-400/10 text-amber-300",
-    bar: "bg-amber-400",
-  },
-  tinggi: {
-    label: "Tinggi",
-    badge: "border-orange-400/30 bg-orange-400/10 text-orange-300",
-    bar: "bg-orange-400",
-  },
-  kritis: {
-    label: "Kritis",
-    badge: "border-rose-400/30 bg-rose-400/10 text-rose-300",
-    bar: "bg-rose-400",
-  },
-};
-
 export interface CategoryMeta {
   label: string;
   description: string;
@@ -117,7 +94,7 @@ export const CATEGORY_META: Record<SignalCategory, CategoryMeta> = {
   },
   indobert: {
     label: "Model IndoBERT",
-    description: "Klasifikasi probabilistik model IndoBERT lokal sebagai pembanding.",
+    description: "Klasifikasi probabilistik model IndoBERT lokal; ikut menimbang indeks pola narasi (bobot 30%).",
     icon: BrainCircuit,
     hex: "#a78bfa",
   },
@@ -127,9 +104,7 @@ export const VERDICT_FILTERS: Array<{ value: Verdict | null; label: string }> = 
   { value: null, label: "Semua" },
   { value: "terindikasi_hoaks", label: "Terindikasi Hoaks" },
   { value: "terindikasi_fakta", label: "Terindikasi Fakta" },
-  { value: "campuran", label: "Campuran" },
   { value: "perlu_verifikasi", label: "Perlu Verifikasi" },
-  { value: "belum_dapat_dinilai", label: "Belum Dapat Dinilai" },
 ];
 
 export const DECISION_STANCE_META: Record<string, { label: string; badge: string }> = {
