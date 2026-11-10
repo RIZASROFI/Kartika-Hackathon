@@ -274,11 +274,12 @@ di PN Jakarta Timur”) disimpan sebagai **konteks** dan tidak menambah bobot ma
 tidak menilai benar/salah; bila `CLAIM_MATCH_ENABLED=false` atau model gagal, pencocokan kata
 lama dipakai dan statusnya tercatat di `decision.provider_status.claim_match`.
 
-Verdict: **Terindikasi Fakta** / **Terindikasi Hoaks** bila sisi dominan ≥0,60 dan ≥70% bobot;
+Status: **Terindikasi Fakta** / **Terindikasi Hoaks** bila sisi dominan ≥0,60 dan ≥70% bobot;
 bila tidak ada sisi pembanding, ≥2 domain independen dengan bobot ≥0,40 sudah memutuskan;
-**Campuran** bila kedua sisi ≥0,30 dan sisi lemah ≥50% sisi kuat; **Perlu Verifikasi** bila bukti
-tipis atau tidak konvergen; **Belum Dapat Dinilai** bila tidak ada bukti. Alasan penahanan
-disimpan di `decision.insufficient_reason`.
+**Perlu Verifikasi** bila bukti tipis, tidak konvergen, saling bertentangan, atau cek fakta menilai
+klaim hanya sebagian benar; **Belum Dapat Dinilai** bila tidak ada bukti. Alasan penahanan
+disimpan di `decision.insufficient_reason`. Analisis lama yang berstatus **Campuran** tetap
+ditampilkan sebagai format lama, tetapi mesin tidak lagi menghasilkannya.
 
 Bobot indeks pola narasi (bukan bukti): tanpa atribusi yang dapat ditelusuri (+20), sumber kabur seperti “kabarnya”
 atau “orang dalam” (+9 per frasa, maks 27), bahasa sensasional (maks 18), tekanan menyebarkan

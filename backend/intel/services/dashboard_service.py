@@ -10,7 +10,6 @@ from django.utils import timezone
 
 from intel.analysis.ebde import (
     VERDICT_BELUM_DAPAT_DINILAI,
-    VERDICT_CAMPURAN,
     VERDICT_PERLU_VERIFIKASI,
     VERDICT_TERINDIKASI_FAKTA,
     VERDICT_TERINDIKASI_HOAKS,
@@ -26,10 +25,10 @@ CATEGORY_LABELS = {
 VERDICT_ORDER = [
     VERDICT_TERINDIKASI_HOAKS,
     VERDICT_TERINDIKASI_FAKTA,
-    VERDICT_CAMPURAN,
     VERDICT_PERLU_VERIFIKASI,
     VERDICT_BELUM_DAPAT_DINILAI,
     # Format lama tetap muncul selama riwayat lama belum dimigrasikan.
+    "campuran",
     "terindikasi_menyesatkan",
     "risiko_rendah",
 ]

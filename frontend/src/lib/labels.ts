@@ -30,15 +30,6 @@ export const VERDICT_META: Record<Verdict, VerdictMeta> = {
     dot: "bg-rose-400",
     hex: "#fb7185",
   },
-  campuran: {
-    label: "Campuran",
-    short: "Campuran",
-    description:
-      "Sebagian klaim didukung dan sebagian dibantah, atau pemeriksa fakta menilai klaim hanya sebagian benar.",
-    badge: "border-orange-400/30 bg-orange-400/10 text-orange-300",
-    dot: "bg-orange-400",
-    hex: "#fb923c",
-  },
   perlu_verifikasi: {
     label: "Perlu Verifikasi",
     short: "Perlu verifikasi",
@@ -57,7 +48,17 @@ export const VERDICT_META: Record<Verdict, VerdictMeta> = {
     dot: "bg-slate-400",
     hex: "#94a3b8",
   },
-  // Format lama: hanya muncul pada analisis yang dibuat sebelum engine EBDE.
+  // Format lama: hanya muncul pada riwayat yang dibuat sebelum aturan status
+  // sekarang. "campuran" tidak lagi dihasilkan untuk analisis baru.
+  campuran: {
+    label: "Campuran (format lama)",
+    short: "Campuran (lama)",
+    description:
+      "Status lama untuk bukti yang saling bertentangan atau klaim yang hanya sebagian benar. Analisis baru memakai Perlu Verifikasi.",
+    badge: "border-orange-400/20 bg-orange-400/[0.06] text-orange-300/80",
+    dot: "bg-orange-400/60",
+    hex: "#fb923c",
+  },
   terindikasi_menyesatkan: {
     label: "Terindikasi Hoax (format lama)",
     short: "Hoax (lama)",
@@ -105,6 +106,7 @@ export const VERDICT_FILTERS: Array<{ value: Verdict | null; label: string }> = 
   { value: "terindikasi_hoaks", label: "Terindikasi Hoaks" },
   { value: "terindikasi_fakta", label: "Terindikasi Fakta" },
   { value: "perlu_verifikasi", label: "Perlu Verifikasi" },
+  { value: "belum_dapat_dinilai", label: "Belum Dapat Dinilai" },
 ];
 
 export const DECISION_STANCE_META: Record<string, { label: string; badge: string }> = {

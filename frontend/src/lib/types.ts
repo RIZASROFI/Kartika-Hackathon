@@ -1,10 +1,11 @@
 export type Verdict =
   | "terindikasi_fakta"
   | "terindikasi_hoaks"
-  | "campuran"
   | "perlu_verifikasi"
   | "belum_dapat_dinilai"
-  // Format lama (engine heuristic-1.x) tetap dibaca agar riwayat tidak rusak.
+  // Format lama tetap dibaca agar riwayat tidak rusak. "campuran" tidak lagi
+  // dihasilkan mesin; hanya analisis lama yang masih menyimpannya.
+  | "campuran"
   | "terindikasi_menyesatkan"
   | "risiko_rendah";
 

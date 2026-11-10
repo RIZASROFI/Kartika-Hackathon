@@ -97,7 +97,7 @@ const SERVICES = [
   {
     icon: Scale,
     name: "Evidence-Based Decision Engine",
-    text: "Mencocokkan klaim temuan cek fakta dengan konten, menimbang bukti (relevansi × kredibilitas × kebaruan), menghitung tiap domain independen sekali, mendeteksi konflik, lalu memilih satu dari lima verdict — atau menahan verdict.",
+    text: "Mencocokkan klaim temuan cek fakta dengan konten, menimbang bukti (relevansi × kredibilitas × kebaruan), menghitung tiap domain independen sekali, mendeteksi konflik, lalu memilih satu dari empat status — termasuk menahan verdict sebagai Belum Dapat Dinilai.",
   },
   {
     icon: Database,
@@ -106,13 +106,13 @@ const SERVICES = [
   },
 ];
 
-// Status yang ditampilkan di halaman ini. EBDE tetap dapat menghasilkan
-// "campuran" dan "belum_dapat_dinilai" (bukti bertentangan atau kosong); status
-// itu hanya tidak dipublikasikan sebagai daftar di halaman metodologi.
+// Status yang ditampilkan di halaman ini. "campuran" hanya tersisa pada
+// riwayat lama dan tidak lagi dihasilkan untuk analisis baru.
 const PUBLISHED_STATUSES = [
   "terindikasi_fakta",
   "terindikasi_hoaks",
   "perlu_verifikasi",
+  "belum_dapat_dinilai",
 ] as const;
 
 const DIMENSIONS: Array<{ key: SignalCategory; weight: string }> = [
@@ -435,8 +435,9 @@ export default function Methodology() {
               Dua keluaran yang tidak dibandingkan:
             </span>{" "}
             indeks pola narasi (0–100) mengukur pola penyebaran dan sengaja tidak diberi band
-            rendah/sedang/tinggi. Verdict faktual (Terindikasi Fakta/Hoaks, Perlu Verifikasi)
-            dihitung EBDE dari bukti eksternal saja, sehingga keduanya bisa bergerak berlawanan:
+            rendah/sedang/tinggi. Status faktual (Terindikasi Fakta/Hoaks, Perlu Verifikasi,
+            Belum Dapat Dinilai) dihitung EBDE dari bukti eksternal saja, sehingga keduanya bisa
+            bergerak berlawanan:
             narasi yang rapi bisa berindeks rendah meski isinya hoaks.
           </div>
         </Card>

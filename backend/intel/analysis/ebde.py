@@ -35,21 +35,21 @@ DECISION_ENGINE_VERSION = "ebde-1.0"
 
 VERDICT_TERINDIKASI_FAKTA = "terindikasi_fakta"
 VERDICT_TERINDIKASI_HOAKS = "terindikasi_hoaks"
-VERDICT_CAMPURAN = "campuran"
 VERDICT_PERLU_VERIFIKASI = "perlu_verifikasi"
 VERDICT_BELUM_DAPAT_DINILAI = "belum_dapat_dinilai"
 
 FACTUAL_VERDICT_LABELS = {
     VERDICT_TERINDIKASI_FAKTA: "Terindikasi Fakta",
     VERDICT_TERINDIKASI_HOAKS: "Terindikasi Hoaks",
-    VERDICT_CAMPURAN: "Campuran",
     VERDICT_PERLU_VERIFIKASI: "Perlu Verifikasi",
     VERDICT_BELUM_DAPAT_DINILAI: "Belum Dapat Dinilai",
 }
 
-# Verdict lama (format heuristic-1.x) tetap dikenali agar riwayat dan data
-# dashboard yang sudah ada tidak kehilangan label.
+# Verdict lama tetap dikenali agar riwayat dan data dashboard yang sudah ada
+# tidak kehilangan label. "campuran" tidak lagi dihasilkan mesin; analisis lama
+# yang memakainya ditandai sebagai format lama.
 LEGACY_VERDICT_LABELS = {
+    "campuran": "Campuran (format lama)",
     "terindikasi_menyesatkan": "Terindikasi Hoax (format lama)",
     "risiko_rendah": "Tanpa indikasi hoax (format lama)",
 }
@@ -68,7 +68,7 @@ UNCONTESTED_MIN_WEIGHT = 0.40
 UNCONTESTED_MIN_GROUPS = 2
 MIN_OPPOSING_WEIGHT = 0.30  # sisi lawan minimal agar dihitung sebagai konflik
 DOMINANCE_RATIO = 0.70  # porsi sisi dominan terhadap dua sisi yang berlawanan
-CONFLICT_RATIO = 0.50  # sisi lemah / sisi kuat minimal agar disebut campuran
+CONFLICT_RATIO = 0.50  # sisi lemah / sisi kuat minimal agar bukti disebut bertentangan
 MIN_INDEPENDENT_GROUPS = 2  # domain independen minimal untuk bukti dianggap cukup
 # Pengecualian: satu temuan lembaga cek fakta boleh berdiri sendiri, tetapi
 # hanya bila penerbitnya benar-benar kredibel dan temuannya relevan/baru.
@@ -558,15 +558,16 @@ def _aggregate(items: list[EvidenceItem]):
     }
 
 
-def _credible_single_source(items: list[EvidenceItem]) -> bool:
-    """Satu temuan cek fakta kredibel boleh berdiri sendiri; artikel berita tidak."""
-    return any(
-        item.kind == "factcheck"
+def _credible_single_items(items: list[EvidenceItem]) -> list[EvidenceItem]:
+    """Temuan cek fakta yang boleh berdiri sendiri; artikel berita tidak."""
+    return [
+        item
+        for item in items
+        if item.kind == "factcheck"
         and item.credibility >= SINGLE_SOURCE_MIN_CREDIBILITY
         and item.relevance >= SINGLE_SOURCE_MIN_RELEVANCE
         and item.recency >= SINGLE_SOURCE_MIN_RECENCY
-        for item in items
-    )
+    ]
 
 
 def _confidence(
@@ -593,6 +594,14 @@ def _no_evidence_reason(provider_status: dict[str, str]) -> str:
             "Tidak ada layanan verifikasi fakta yang aktif, sehingga belum ada bukti "
             "eksternal untuk menilai klaim."
         )
+    if claim_check == "verified":
+        # Sumber berhasil diambil dan dinilai model, tetapi tidak ada yang
+        # menyatakan klaim benar/salah. Ini berbeda dari "tidak ada sumber".
+        return (
+            "Sumber eksternal sudah ditemukan, tetapi tidak ada yang secara eksplisit "
+            "mendukung atau membantah klaim; karena itu belum ada bukti yang dapat "
+            "menimbang verdict."
+        )
     return (
         "Belum ada bukti eksternal yang terkumpul; ketiadaan catatan pemeriksaan "
         "fakta bukan bukti kebenaran."
@@ -617,9 +626,15 @@ def assess_evidence(
     refute, refute_groups = totals[STANCE_REFUTE]
     partial, partial_groups = totals[STANCE_PARTIAL]
     independent_groups = totals["independent_groups"]
+    # Temuan cek fakta yang sangat kredibel boleh berdiri sendiri, tetapi
+    # pengecualian itu harus berlaku untuk sisi temuannya saja: temuan yang
+    # membantah tidak boleh membuat sisi pendukung menang, dan sebaliknya.
+    single_items = _credible_single_items(weighted)
+    single_support = any(item.stance == STANCE_SUPPORT for item in single_items)
+    single_refute = any(item.stance == STANCE_REFUTE for item in single_items)
+    single_partial = any(item.stance == STANCE_PARTIAL for item in single_items)
     sufficient = bool(weighted) and (
-        independent_groups >= MIN_INDEPENDENT_GROUPS
-        or _credible_single_source(weighted)
+        independent_groups >= MIN_INDEPENDENT_GROUPS or bool(single_items)
     )
     both_sides = min(support, refute) / max(support, refute) if support and refute else 0.0
     conflict = (
@@ -644,18 +659,25 @@ def assess_evidence(
         )
         rationale = insufficient_reason
     elif conflict:
-        verdict = VERDICT_CAMPURAN
+        verdict = VERDICT_PERLU_VERIFIKASI
         rationale = (
             f"Bukti saling bertentangan: {support_groups} sumber mendukung (bobot {support:.2f}) "
             f"berhadapan dengan {refute_groups} sumber membantah (bobot {refute:.2f})."
         )
-    elif support >= MIN_DECISION_WEIGHT and dominance >= DOMINANCE_RATIO:
+        insufficient_reason = rationale
+    elif (
+        (support >= MIN_DECISION_WEIGHT or single_support)
+        and dominance >= DOMINANCE_RATIO
+    ):
         verdict = VERDICT_TERINDIKASI_FAKTA
         rationale = (
             f"{support_groups} sumber independen mendukung klaim (bobot {support:.2f}) "
             f"dengan dominasi {dominance:.0%}; bukti pembantah hanya {refute:.2f}."
         )
-    elif refute >= MIN_DECISION_WEIGHT and dominance >= DOMINANCE_RATIO:
+    elif (
+        (refute >= MIN_DECISION_WEIGHT or single_refute)
+        and dominance >= DOMINANCE_RATIO
+    ):
         verdict = VERDICT_TERINDIKASI_HOAKS
         rationale = (
             f"{refute_groups} sumber independen membantah klaim (bobot {refute:.2f}) "
@@ -681,12 +703,13 @@ def assess_evidence(
             f"{support_groups} domain independen mendukung klaim tanpa bukti pembantah yang "
             f"berarti (bobot {support:.2f}); tidak ada temuan yang menyeimbangkan."
         )
-    elif partial >= PARTIAL_DOMINANT_WEIGHT:
-        verdict = VERDICT_CAMPURAN
+    elif partial >= PARTIAL_DOMINANT_WEIGHT or single_partial:
+        verdict = VERDICT_PERLU_VERIFIKASI
         rationale = (
             f"Pemeriksaan fakta menilai klaim hanya sebagian benar (bobot sebagian {partial:.2f}); "
-            "sebagian isi terbukti, sebagian tidak."
+            "bagian yang belum terbukti perlu diverifikasi lebih lanjut."
         )
+        insufficient_reason = rationale
     else:
         verdict = VERDICT_PERLU_VERIFIKASI
         rationale = (

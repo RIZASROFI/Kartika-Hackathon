@@ -8,6 +8,7 @@ from intel.models import Analysis, FactCheckQuery
 from intel.services.analysis_service import create_analysis
 from intel.services.factcheck import (
     FactCheckError,
+    _build_queries,
     _tokens,
     apply_limitation,
     classify_rating,
@@ -96,6 +97,24 @@ class RelevanceTests(TestCase):
                 source_tokens=_tokens("Bansos Rp 5 juta cair lewat link"),
             )
         )
+
+    def test_narrative_framing_is_removed_from_query(self) -> None:
+        """Kata pembingkai (mis. "konspirasi") tidak dipakai mencari cek fakta.
+
+        Judul "Konspirasi Program MBG..." tidak cocok dengan klaim yang diperiksa
+        ("Program MBG sebagai alat..."); tanpa kata pembingkai, kueri menemukan
+        pemeriksaan yang sebenarnya ada.
+        """
+        queries = _build_queries(
+            text=(
+                "Beredar teori konspirasi di platform digital yang mengaitkan "
+                "program MBG sebagai alat kontrol populasi biomedis pengganti "
+                "vaksin COVID-19."
+            ),
+            title="Konspirasi Program Makan Bergizi Gratis (MBG)",
+            claims=[],
+        )
+        self.assertEqual(queries[0], "Program Makan Bergizi Gratis (MBG)")
 
     def test_short_title_without_numbers_is_not_enough(self) -> None:
         self.assertFalse(

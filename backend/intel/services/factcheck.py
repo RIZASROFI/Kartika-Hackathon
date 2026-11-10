@@ -37,6 +37,34 @@ MAX_QUERY_CHARS = 200
 MIN_TOKEN_LENGTH = 4
 DEFAULT_OVERLAP = 0.45
 
+# Kata yang menerangkan bentuk narasi (mis. "beredar teori konspirasi"), bukan
+# isi klaim. Pencocokan cek fakta bekerja pada kata di dalam klaim, sehingga
+# kata-kata ini membuat kueri gagal menemukan pemeriksaan yang sebenarnya ada
+# (mis. judul "Konspirasi Program MBG..." vs klaim "Program MBG sebagai alat...").
+QUERY_NOISE_WORDS = (
+    "beredar",
+    "tersebar",
+    "viral",
+    "ramai",
+    "heboh",
+    "isu",
+    "kabar",
+    "kabarnya",
+    "narasi",
+    "teori",
+    "konspirasi",
+    "klaim",
+    "mitos",
+    "hoaks",
+    "hoax",
+    "disinformasi",
+    "misinformasi",
+    "propaganda",
+)
+QUERY_NOISE_RE = re.compile(
+    r"\b(?:" + "|".join(QUERY_NOISE_WORDS) + r")\b", re.IGNORECASE
+)
+
 MAFINDO_PROVIDER = "mafindo"
 MAFINDO_SEARCH_PATH = "/antihoax/search"
 # Server MAFINDO memblokir User-Agent non-browser dan path dengan trailing
@@ -301,6 +329,11 @@ def _query_hash(query: str, *, provider: str, method: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _clean_query(value: str) -> str:
+    """Buang kata pembingkai narasi agar kueri mendekati isi klaim."""
+    return normalize_whitespace(QUERY_NOISE_RE.sub(" ", value)).strip(" .,-–—")
+
+
 def _build_queries(
     *, text: str, title: str | None, claims: list[str]
 ) -> list[str]:
@@ -316,7 +349,12 @@ def _build_queries(
     queries: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
-        cleaned = normalize_whitespace(candidate)[:MAX_QUERY_CHARS].strip(" .,-–—")
+        normalized = normalize_whitespace(candidate)
+        cleaned = _clean_query(normalized)[:MAX_QUERY_CHARS].strip(" .,-–—")
+        # Judul/klaim yang seluruhnya berupa kata pembingkai tetap dipakai apa
+        # adanya; menghapus semuanya hanya akan membuat kueri kosong.
+        if len(cleaned) < 12:
+            cleaned = normalized[:MAX_QUERY_CHARS].strip(" .,-–—")
         key = cleaned.casefold()
         if len(key) < 12 or key in seen:
             continue

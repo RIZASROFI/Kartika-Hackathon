@@ -16,7 +16,6 @@ from intel.analysis.ebde import (
     STANCE_REFUTE,
     STANCE_SUPPORT,
     VERDICT_BELUM_DAPAT_DINILAI,
-    VERDICT_CAMPURAN,
     VERDICT_PERLU_VERIFIKASI,
     VERDICT_TERINDIKASI_FAKTA,
     VERDICT_TERINDIKASI_HOAKS,
@@ -307,7 +306,7 @@ class DecisionTests(TestCase):
         self.assertAlmostEqual(decision.refute_weight, 1.62, places=2)
         self.assertFalse(decision.conflict)
 
-    def test_conflicting_evidence_yields_mixed(self) -> None:
+    def test_conflicting_evidence_needs_verification(self) -> None:
         decision = assess_evidence(
             items=[
                 make_item(url="https://turnbackhoax.id/a", publisher="MAFINDO"),
@@ -318,8 +317,9 @@ class DecisionTests(TestCase):
                 ),
             ]
         )
-        self.assertEqual(decision.verdict, VERDICT_CAMPURAN)
+        self.assertEqual(decision.verdict, VERDICT_PERLU_VERIFIKASI)
         self.assertTrue(decision.conflict)
+        self.assertIn("bertentangan", decision.insufficient_reason or "")
         self.assertGreaterEqual(decision.support_weight, 0.3)
         self.assertGreaterEqual(decision.refute_weight, 0.3)
 
@@ -386,6 +386,65 @@ class DecisionTests(TestCase):
         self.assertTrue(decision.sufficient)
         self.assertEqual(decision.verdict, VERDICT_TERINDIKASI_HOAKS)
 
+    def test_single_credible_factcheck_below_weight_threshold_decides(self) -> None:
+        """Pengecualian satu sumber kredibel harus dipakai oleh verdict, bukan
+        hanya oleh flag `sufficient`."""
+        decision = assess_evidence(
+            items=[
+                make_item(
+                    url="https://tempo.co/cekfakta/mbg",
+                    publisher="Tempo.co",
+                    relevance=0.9,
+                    credibility=0.95,
+                    recency=0.6,
+                )
+            ]
+        )
+        self.assertLess(decision.refute_weight, 0.60)
+        self.assertTrue(decision.sufficient)
+        self.assertEqual(decision.verdict, VERDICT_TERINDIKASI_HOAKS)
+
+    def test_single_credible_partial_factcheck_needs_verification(self) -> None:
+        decision = assess_evidence(
+            items=[
+                make_item(
+                    url="https://tempo.co/cekfakta/mbg",
+                    publisher="Tempo.co",
+                    stance=STANCE_PARTIAL,
+                    relevance=0.6,
+                    credibility=0.95,
+                    recency=0.6,
+                )
+            ]
+        )
+        self.assertLess(decision.partial_weight, 0.50)
+        self.assertTrue(decision.sufficient)
+        self.assertEqual(decision.verdict, VERDICT_PERLU_VERIFIKASI)
+        self.assertIn("sebagian benar", decision.insufficient_reason or "")
+
+    def test_single_credible_source_cannot_decide_the_opposite_side(self) -> None:
+        """Temuan kredibel yang membantah tidak boleh memenangkan sisi pendukung."""
+        decision = assess_evidence(
+            items=[
+                make_item(
+                    url="https://tempo.co/cekfakta/mbg",
+                    publisher="Tempo.co",
+                    relevance=0.9,
+                    credibility=0.95,
+                    recency=0.6,
+                ),
+                make_item(
+                    url="https://blog.example.org/a",
+                    publisher="Blog pribadi",
+                    stance=STANCE_SUPPORT,
+                    relevance=0.5,
+                    credibility=0.3,
+                    recency=0.6,
+                ),
+            ]
+        )
+        self.assertEqual(decision.verdict, VERDICT_TERINDIKASI_HOAKS)
+
     def test_no_evidence_never_forces_a_verdict(self) -> None:
         decision = assess_evidence(
             items=[],
@@ -394,6 +453,17 @@ class DecisionTests(TestCase):
         self.assertEqual(decision.verdict, VERDICT_BELUM_DAPAT_DINILAI)
         self.assertFalse(decision.sufficient)
         self.assertIn("tidak dapat dihubungi", decision.insufficient_reason or "")
+
+    def test_inconclusive_retrieval_is_reported_as_found_but_unhelpful(self) -> None:
+        """Sumber yang sudah diambil tetapi tidak menilai klaim bukan "tanpa bukti"."""
+        decision = assess_evidence(
+            items=[],
+            provider_status={"factcheck": "no_match", "claim_check": "verified"},
+        )
+        self.assertEqual(decision.verdict, VERDICT_BELUM_DAPAT_DINILAI)
+        reason = decision.insufficient_reason or ""
+        self.assertIn("tidak ada yang secara eksplisit", reason)
+        self.assertNotIn("Belum ada bukti eksternal", reason)
 
     def test_narrative_risk_is_not_evidence(self) -> None:
         decision = assess_evidence(items=[], narrative_risk=97)
@@ -498,7 +568,7 @@ class DecisionTests(TestCase):
         # tidak boleh menjadi dasar verdict tanpa pembanding independen.
         self.assertFalse(decision.sufficient)
 
-    def test_partial_evidence_alone_is_reported_as_mixed(self) -> None:
+    def test_partial_evidence_alone_needs_verification(self) -> None:
         decision = assess_evidence(
             items=[
                 make_item(
@@ -513,7 +583,8 @@ class DecisionTests(TestCase):
                 ),
             ]
         )
-        self.assertEqual(decision.verdict, VERDICT_CAMPURAN)
+        self.assertEqual(decision.verdict, VERDICT_PERLU_VERIFIKASI)
+        self.assertIn("sebagian benar", decision.insufficient_reason or "")
         self.assertGreaterEqual(decision.partial_weight, 0.5)
 
 
@@ -625,14 +696,15 @@ class DecisionPersistenceTests(TestCase):
             analysis = create_analysis(text=ARTICLE, title="Bansos lewat link")
         self.assertEqual(analysis.verdict, VERDICT_TERINDIKASI_FAKTA)
 
-    def test_mixed_ratings_yield_mixed_verdict(self) -> None:
+    def test_mixed_ratings_need_verification(self) -> None:
         with mock.patch(
             "intel.services.factcheck._fetch_claims",
             return_value=payload_for("Salah", second_rating="Benar"),
         ):
             analysis = create_analysis(text=ARTICLE, title="Bansos lewat link")
-        self.assertEqual(analysis.verdict, VERDICT_CAMPURAN)
+        self.assertEqual(analysis.verdict, VERDICT_PERLU_VERIFIKASI)
         self.assertTrue(analysis.decision["conflict"])
+        self.assertIn("bertentangan", analysis.decision["insufficient_reason"] or "")
 
     def test_mismatched_factcheck_hits_do_not_force_mixed_verdict(self) -> None:
         alignment = {

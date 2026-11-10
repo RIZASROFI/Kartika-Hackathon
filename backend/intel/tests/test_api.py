@@ -47,7 +47,6 @@ class ApiTests(APITestCase):
             {
                 "terindikasi_fakta",
                 "terindikasi_hoaks",
-                "campuran",
                 "perlu_verifikasi",
                 "belum_dapat_dinilai",
             },
